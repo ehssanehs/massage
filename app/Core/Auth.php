@@ -11,14 +11,27 @@ final class Auth {
     }
     public static function id(): ?int { return self::user()['id'] ?? null; }
     public static function login(string $email, string $password): bool {
-    $u = DB::row("SELECT * FROM users WHERE email=? AND status='active' LIMIT 1", [$email]);
-    if (!$u || !password_verify($password, $u['password_hash'])) return false;
-    $_SESSION['uid'] = (int)$u['id'];
-    DB::exec("UPDATE users SET last_login_at=NOW() WHERE id=?", [$u['id']]);
-    Audit::log('login','users',(int)$u['id']);
-    return true;
-}
-    public static function logout(): void { if (self::id()) Audit::log('logout','users',self::id()); $_SESSION=[]; session_destroy(); }
+        $u = DB::row("SELECT * FROM users WHERE email=? AND status='active' LIMIT 1", [$email]);
+        if (!$u || !password_verify($password, $u['password_hash'])) return false;
+        // Regenerate session ID to prevent session fixation attacks
+        session_regenerate_id(true);
+        $_SESSION['uid'] = (int)$u['id'];
+        // Generate a fresh CSRF token for the new session
+        $_SESSION['_csrf'] = bin2hex(random_bytes(32));
+        DB::exec("UPDATE users SET last_login_at=NOW() WHERE id=?", [$u['id']]);
+        Audit::log('login','users',(int)$u['id']);
+        return true;
+    }
+    public static function logout(): void {
+        if (self::id()) Audit::log('logout','users',self::id());
+        $_SESSION = [];
+        session_destroy();
+        // Clear the session cookie
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+        }
+    }
     public static function requireLogin(): void { if (!self::user()) redirect('login'); }
     public static function can(string $permission): bool {
         $u = self::user(); if (!$u) return false; if (($u['role_slug'] ?? '') === 'super_admin') return true;
