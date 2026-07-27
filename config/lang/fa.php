@@ -1,4 +1,12 @@
 <?php
 return [
- 'dashboard'=>'داشبورد','customers'=>'مشتریان','appointments'=>'نوبت‌ها','sessions'=>'جلسات ماساژ','services'=>'خدمات','therapists'=>'درمانگران','followups'=>'پیگیری‌ها','finance'=>'مالی','expenses'=>'هزینه‌ها','salaries'=>'حقوق و پورسانت','reports'=>'گزارش‌ها','settings'=>'تنظیمات','users'=>'کاربران','audit'=>'لاگ ممیزی','inventory'=>'انبار','packages'=>'پکیج‌ها','campaigns'=>'کمپین‌ها','login'=>'ورود','save'=>'ذخیره','cancel'=>'انصراف','edit'=>'ویرایش','delete'=>'حذف','restore'=>'بازیابی','create'=>'افزودن','search'=>'جستجو','filter'=>'فیلتر','actions'=>'عملیات','status'=>'وضعیت','created_at'=>'ایجاد','updated_at'=>'بروزرسانی','name'=>'نام','email'=>'ایمیل','phone'=>'تلفن','mobile'=>'موبایل','amount'=>'مبلغ','date'=>'تاریخ','description'=>'توضیحات','active'=>'فعال','inactive'=>'غیرفعال','pending'=>'در انتظار','confirmed'=>'تأیید شده','completed'=>'تکمیل شده','cancelled'=>'لغو شده','no_show'=>'عدم مراجعه','cash'=>'نقدی','card'=>'کارتخوان','transfer'=>'انتقال بانکی','online'=>'آنلاین','other'=>'سایر'
+ 'dashboard'=>'داشبورد','customers'=>'مشتریان','appointments'=>'نوبت‌ها','sessions'=>'جلسات ماساژ','services'=>'خدمات','therapists'=>'درمانگران','followups'=>'پیگیری‌ها','finance'=>'مالی','expenses'=>'هزینه‌ها','salaries'=>'حقوق و پورسانت','reports'=>'گزارش‌ها','settings'=>'تنظیمات','users'=>'کاربران','audit'=>'لاگ ممیزی','inventory'=>'انبار','packages'=>'پکیج‌ها','campaigns'=>'کمپین‌ها','login'=>'ورود','save'=>'ذخیره','cancel'=>'انصراف','edit'=>'ویرایش','delete'=>'حذف','restore'=>'بازیابی','create'=>'افزودن','search'=>'جستجو','filter'=>'فیلتر','actions'=>'عملیات','status'=>'وضعیت','created_at'=>'ایجاد','updated_at'=>'بروزرسانی','name'=>'نام','email'=>'ایمیل','phone'=>'تلفن','mobile'=>'موبایل','amount'=>'مبلغ','date'=>'تاریخ','description'=>'توضیحات','active'=>'فعال','inactive'=>'غیرفعال','pending'=>'در انتظار','confirmed'=>'تأیید شده','completed'=>'تکمیل شده','cancelled'=>'لغو شده','no_show'=>'عدم مراجعه','cash'=>'نقدی','card'=>'کارتخوان','transfer'=>'انتقال بانکی','online'=>'آنلاین','other'=>'سایر',
+ // Followup statuses
+ 'contacted'=>'تماس گرفته شد','not_answered'=>'پاسخ نداد','interested'=>'علاقه‌مند','booked'=>'رزرو شد','requested_later'=>'تماس بعداً','refused'=>'رد کرد',
+ // Priority
+ 'high'=>'بالا','normal'=>'عادی','low'=>'پایین',
+ // Segments
+ 'vip'=>'VIP','new'=>'جدید','at_risk'=>'در معرض ریزش','lost'=>'از دست رفته',
+ // Payment
+ 'paid'=>'پرداخت شده','partial'=>'بخشی','unpaid'=>'پرداخت نشده'
 ];

@@ -40,6 +40,17 @@ function customer_profile_extra(int $id): string { $metrics=DB::row("SELECT COUN
 
 if($route==='login'){ if(Auth::user()) redirect('dashboard'); if($_SERVER['REQUEST_METHOD']==='POST'){ if(!Security::rateLimit('login',5,300)) $error='تلاش بیش از حد. چند دقیقه بعد امتحان کنید.'; elseif(Auth::login($_POST['email']??'', $_POST['password']??'')) redirect('dashboard'); else $error='ایمیل یا رمز عبور اشتباه است.'; } ob_start(); ?><div class="auth-card"><h1>ورود به سامانه مدیریت ماساژ</h1><?php if(!empty($error)): ?><div class="alert alert-danger"><?=e($error)?></div><?php endif;?><form method="post"><?=View::csrf()?><label class="form-label">ایمیل</label><input name="email" type="email" class="form-control" required value="admin@example.com"><label class="form-label mt-3">رمز عبور</label><input name="password" type="password" class="form-control" required value="password"><button class="btn btn-primary w-100 mt-4">ورود امن</button></form><p class="text-muted small mt-3">حساب پیش‌فرض: admin@example.com / password</p></div><?php echo View::render('ورود', ob_get_clean()); exit; }
 if($route==='logout'){ Auth::logout(); redirect('login'); }
+if($route==='profile.password'){
+    if($_SERVER['REQUEST_METHOD']==='POST'){
+        $current=$_POST['current_password']??''; $new=$_POST['new_password']??''; $confirm=$_POST['confirm_password']??'';
+        $user=DB::row('SELECT password_hash FROM users WHERE id=?',[Auth::id()]);
+        if(!$user||!password_verify($current,$user['password_hash'])) $error='رمز عبور فعلی اشتباه است.';
+        elseif(strlen($new)<6) $error='رمز جدید باید حداقل ۶ کاراکتر باشد.';
+        elseif($new!==$confirm) $error='تکرار رمز عبور مطابقت ندارد.';
+        else{ DB::update('users',['password_hash'=>password_hash($new,PASSWORD_DEFAULT),'updated_at'=>date('Y-m-d H:i:s')],'id=:id',['id'=>Auth::id()]); Audit::log('password.change','users',Auth::id()); toast('رمز عبور با موفقیت تغییر کرد.'); redirect('dashboard'); }
+    }
+    ob_start(); ?><div class="card p-4" style="max-width:500px"><h3 class="mb-3">تغییر رمز عبور</h3><?php if(!empty($error)): ?><div class="alert alert-danger"><?=e($error)?></div><?php endif;?><form method="post"><?=View::csrf()?><label class="form-label">رمز عبور فعلی</label><input name="current_password" type="password" class="form-control mb-3" required><label class="form-label">رمز عبور جدید</label><input name="new_password" type="password" class="form-control mb-3" required minlength="6"><label class="form-label">تکرار رمز عبور جدید</label><input name="confirm_password" type="password" class="form-control mb-3" required minlength="6"><button class="btn btn-primary">ذخیره رمز جدید</button></form></div><?php echo View::render('تغییر رمز عبور', ob_get_clean()); exit;
+}
 Auth::requireLogin();
 
 if(isset($modules[$route])) { handle_module($route,'index'); exit; }
@@ -47,13 +58,171 @@ if(preg_match('/^([a-z_]+)\.(create|edit|delete|show)$/',$route,$m) && isset($mo
 
 if($route==='dashboard'){ Auth::requireCan('dashboard.view'); $today=date('Y-m-d'); $stats=['appt'=>DB::value('SELECT COUNT(*) FROM appointments WHERE appointment_date=?',[$today]),'sessions'=>DB::value("SELECT COUNT(*) FROM massage_sessions WHERE massage_date=? AND status='completed'",[$today]),'revenue'=>DB::value("SELECT COALESCE(SUM(final_amount),0) FROM massage_sessions WHERE massage_date=? AND status='completed'",[$today]),'month'=>DB::value("SELECT COALESCE(SUM(final_amount),0) FROM massage_sessions WHERE massage_date>=DATE_FORMAT(CURDATE(),'%Y-%m-01') AND status='completed'"),'new'=>DB::value('SELECT COUNT(*) FROM customers WHERE registration_date=?',[$today]),'follow'=>DB::value("SELECT COUNT(*) FROM followups WHERE status='pending' AND due_date<=CURDATE()")]; $top=DB::select("SELECT s.name, SUM(ms.final_amount) revenue FROM massage_sessions ms JOIN services s ON s.id=ms.service_id WHERE ms.status='completed' GROUP BY s.id ORDER BY revenue DESC LIMIT 5"); ob_start(); ?><div class="row g-3"><?php foreach([['نوبت‌های امروز',$stats['appt'],'bi-calendar2-check'],['جلسات امروز',$stats['sessions'],'bi-clipboard-heart'],['درآمد امروز',money($stats['revenue']),'bi-cash'],['درآمد ماه',money($stats['month']),'bi-graph-up'],['مشتریان جدید',$stats['new'],'bi-person-plus'],['پیگیری معوق/امروز',$stats['follow'],'bi-telephone']] as $s): ?><div class="col-md-4 col-xl-2"><div class="stat"><i class="bi <?=$s[2]?>"></i><span><?=$s[0]?></span><b><?=$s[1]?></b></div></div><?php endforeach;?></div><div class="row g-3 mt-1"><div class="col-lg-8"><div class="card p-4"><h4>روند درآمد ۳۰ روز اخیر</h4><canvas id="revenueChart" data-url="<?=url('api.revenue')?>"></canvas></div></div><div class="col-lg-4"><div class="card p-4"><h4>خدمات برتر</h4><?php foreach($top as $r): ?><div class="d-flex justify-content-between border-bottom py-2"><span><?=e($r['name'])?></span><b><?=money($r['revenue'])?></b></div><?php endforeach;?></div></div></div><?php echo View::render('داشبورد', ob_get_clean()); exit; }
 if($route==='api.revenue'){ header('Content-Type: application/json'); $rows=DB::select("SELECT massage_date d, SUM(final_amount) v FROM massage_sessions WHERE massage_date>=DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND status='completed' GROUP BY massage_date ORDER BY massage_date"); echo json_encode(['labels'=>array_map(fn($r)=>Jalali::toJalali($r['d']),$rows),'values'=>array_map(fn($r)=>(float)$r['v'],$rows)], JSON_UNESCAPED_UNICODE); exit; }
-if($route==='followups'){ Auth::requireCan('followups.view'); if($_SERVER['REQUEST_METHOD']==='POST'){ Auth::requireCan('followups.manage'); $id=(int)$_POST['id']; DB::update('followups',['status'=>$_POST['status'],'result'=>$_POST['result']??'', 'contacted_at'=>date('Y-m-d H:i:s'),'updated_at'=>date('Y-m-d H:i:s')],'id=:id',['id'=>$id]); $f=DB::row('SELECT * FROM followups WHERE id=?',[$id]); if($f) DB::insert('customer_timeline',['customer_id'=>$f['customer_id'],'type'=>'followup','title'=>'ثبت نتیجه پیگیری','body'=>($_POST['result']??$_POST['status']),'entity'=>'followups','entity_id'=>$id,'created_at'=>date('Y-m-d H:i:s')]); toast('نتیجه پیگیری ثبت شد.'); redirect('followups'); } $groups=['امروز'=>"due_date=CURDATE() AND status IN ('pending','requested_later')",'۷ روز آینده'=>"due_date>CURDATE() AND due_date<=DATE_ADD(CURDATE(), INTERVAL 7 DAY) AND status IN ('pending','requested_later')",'معوق'=>"due_date<CURDATE() AND status IN ('pending','requested_later')"]; ob_start(); foreach($groups as $title=>$w){ $rows=DB::select("SELECT f.*, CONCAT(c.first_name,' ',c.last_name) customer_name, c.mobile FROM followups f JOIN customers c ON c.id=f.customer_id WHERE $w ORDER BY due_date"); ?><div class="card p-3 mb-3"><h3><?=e($title)?></h3><div class="table-responsive"><table class="table"><tr><th>تاریخ</th><th>مشتری</th><th>موبایل</th><th>شرح</th><th>ثبت نتیجه</th></tr><?php foreach($rows as $r): ?><tr><td><?=Jalali::toJalali($r['due_date'])?></td><td><a href="<?=url('customers.show',['id'=>$r['customer_id']])?>"><?=e($r['customer_name'])?></a></td><td><?=e($r['mobile'])?></td><td><?=e($r['description'])?></td><td><form method="post" class="d-flex gap-1"><?=View::csrf()?><input type="hidden" name="id" value="<?=$r['id']?>"><select name="status" class="form-select form-select-sm"><option value="contacted">تماس گرفته شد</option><option value="not_answered">پاسخ نداد</option><option value="interested">علاقه‌مند</option><option value="booked">رزرو شد</option><option value="requested_later">تماس بعداً</option><option value="refused">رد کرد</option></select><input name="result" class="form-control form-control-sm" placeholder="یادداشت"><button class="btn btn-sm btn-primary">ثبت</button></form></td></tr><?php endforeach; if(!$rows): ?><tr><td colspan="5" class="empty">موردی وجود ندارد.</td></tr><?php endif;?></table></div></div><?php } echo View::render('مرکز پیگیری', ob_get_clean()); exit; }
+if($route==='followups'){
+    Auth::requireCan('followups.view');
+    if($_SERVER['REQUEST_METHOD']==='POST'){
+        Auth::requireCan('followups.manage');
+        $id=(int)($_POST['id']??0);
+        if($id){
+            $updateData=['status'=>$_POST['status'],'updated_at'=>date('Y-m-d H:i:s')];
+            if(isset($_POST['result']))$updateData['result']=$_POST['result'];
+            if(in_array($_POST['status'],['contacted','not_answered','interested','booked','refused'],true))$updateData['contacted_at']=date('Y-m-d H:i:s');
+            DB::update('followups',$updateData,'id=:id',['id'=>$id]);
+            $f=DB::row('SELECT * FROM followups WHERE id=?',[$id]);
+            if($f) DB::insert('customer_timeline',['customer_id'=>$f['customer_id'],'type'=>'followup','title'=>'نتیجه پیگیری','body'=>($_POST['result']??t($_POST['status'],$_POST['status'])),'entity'=>'followups','entity_id'=>$id,'created_at'=>date('Y-m-d H:i:s')]);
+            toast('نتیجه پیگیری ثبت شد.');
+        }
+        redirect('followups');
+    }
+    $filter=$_GET['filter']??'active';
+    $groups=[];
+    if($filter==='active'){
+        $groups=['معوق (گذشته)'=>"due_date<CURDATE() AND status IN ('pending','requested_later')",'امروز'=>"due_date=CURDATE() AND status IN ('pending','requested_later')",'۷ روز آینده'=>"due_date>CURDATE() AND due_date<=DATE_ADD(CURDATE(), INTERVAL 7 DAY) AND status IN ('pending','requested_later')"];
+    } elseif($filter==='done'){
+        $groups=['تماس گرفته شد'=>"status='contacted'",'پاسخ نداد'=>"status='not_answered'",'علاقه‌مند'=>"status='interested'",'رزرو شد'=>"status='booked'",'رد کرد'=>"status='refused'",'تماس بعداً'=>"status='requested_later'"];
+    } else {
+        $groups=['همه پیگیری‌ها'=>"1=1"];
+    }
+    $totalCount=(int)DB::value("SELECT COUNT(*) FROM followups WHERE status IN ('pending','requested_later')");
+    $todayCount=(int)DB::value("SELECT COUNT(*) FROM followups WHERE due_date<=CURDATE() AND status IN ('pending','requested_later')");
+    $doneCount=(int)DB::value("SELECT COUNT(*) FROM followups WHERE status NOT IN ('pending','requested_later') AND contacted_at IS NOT NULL");
+    ob_start();
+    ?>
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="stat"><i class="bi bi-telephone-outbound"></i><span>پیگیری فعال</span><b><?=Jalali::fa($totalCount)?></b></div></div>
+        <div class="col-md-3"><div class="stat"><i class="bi bi-exclamation-triangle"></i><span>امروز + معوق</span><b class="text-danger"><?=Jalali::fa($todayCount)?></b></div></div>
+        <div class="col-md-3"><div class="stat"><i class="bi bi-check-circle"></i><span>انجام شده</span><b><?=Jalali::fa($doneCount)?></b></div></div>
+    </div>
+    <div class="d-flex gap-2 mb-3 flex-wrap">
+        <a class="btn <?=($filter==='active')?'btn-primary':'btn-soft'?>" href="<?=url('followups',['filter'=>'active'])?>">فعال و معوق</a>
+        <a class="btn <?=($filter==='done')?'btn-primary':'btn-soft'?>" href="<?=url('followups',['filter'=>'done'])?>">انجام شده</a>
+        <a class="btn <?=($filter==='all')?'btn-primary':'btn-soft'?>" href="<?=url('followups',['filter'=>'all'])?>">همه</a>
+    </div>
+    <?php foreach($groups as $title=>$w){
+        $rows=DB::select("SELECT f.*, CONCAT(c.first_name,' ',c.last_name) customer_name, c.mobile FROM followups f JOIN customers c ON c.id=f.customer_id AND c.deleted_at IS NULL WHERE $w ORDER BY f.due_date ASC, f.priority DESC");
+    ?>
+    <div class="card p-3 mb-3">
+        <h5 class="mb-2"><i class="bi bi-list-check"></i> <?=e($title)?> <span class="badge text-bg-secondary"><?=Jalali::fa(count($rows))?></span></h5>
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead><tr><th>تاریخ</th><th>اولویت</th><th>مشتری</th><th>موبایل</th><th>شرح</th><th>نتیجه قبلی</th><th>ثبت نتیجه</th></tr></thead>
+                <tbody>
+                <?php foreach($rows as $r): ?>
+                <tr>
+                    <td><?=Jalali::toJalali($r['due_date'])?></td>
+                    <td><?php $p=$r['priority']??'normal'; $pm=['high'=>'danger','normal'=>'info','low'=>'secondary']; echo '<span class="badge text-bg-'.($pm[$p]??'secondary').'">'.e(t($p,$p)).'</span>';?></td>
+                    <td><a href="<?=url('customers.show',['id'=>$r['customer_id']])?>"><?=e($r['customer_name'])?></a></td>
+                    <td dir="ltr"><?=e($r['mobile'])?></td>
+                    <td><?=e($r['description'])?></td>
+                    <td><?php if($r['result']):?><span class="text-muted small"><?=e($r['result'])?></span><?php else:?>—<?php endif;?></td>
+                    <td>
+                        <?php if(in_array($r['status'],['pending','requested_later'],true)):?>
+                        <form method="post" class="d-flex gap-1 flex-nowrap"><?=View::csrf()?><?php /*CSRF*/ ?><input type="hidden" name="id" value="<?=$r['id']?>"><select name="status" class="form-select form-select-sm" style="width:auto"><option value="contacted">تماس گرفته شد</option><option value="not_answered">پاسخ نداد</option><option value="interested">علاقه‌مند</option><option value="booked">رزرو شد</option><option value="requested_later">تماس بعداً</option><option value="refused">رد کرد</option></select><input name="result" class="form-control form-control-sm" placeholder="یادداشت" style="width:130px"><button class="btn btn-sm btn-primary">ثبت</button></form>
+                        <?php else:?>
+                        <span class="badge text-bg-<?=($r['status']==='booked'?'success':($r['status']==='refused'?'danger':'info'))?>"><?=e(t($r['status'],$r['status']))?></span>
+                        <?php endif;?>
+                    </td>
+                </tr>
+                <?php endforeach; if(!$rows): ?><tr><td colspan="7" class="empty">موردی وجود ندارد.</td></tr><?php endif;?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php } echo View::render('مرکز پیگیری', ob_get_clean()); exit; }
 if($route==='retention'){ $rows=RetentionService::metrics(); ob_start(); ?><div class="card p-4"><h3>هوشمندی نگهداشت مشتری (RFM)</h3><table class="table"><tr><th>مشتری</th><th>آخرین مراجعه</th><th>تعداد</th><th>ارزش مالی</th><th>بخش</th><th>پیشنهاد</th></tr><?php foreach($rows as $r): ?><tr><td><?=e($r['first_name'].' '.$r['last_name'])?></td><td><?=Jalali::toJalali($r['last_visit'])?></td><td><?=Jalali::fa($r['visits'])?></td><td><?=money($r['monetary'])?></td><td><?=status_badge($r['segment'])?></td><td><?=e(($r['segment']==='at_risk'||$r['segment']==='lost')?'تماس فوری و پیشنهاد تخفیف بازگشت':'حفظ ارتباط و پیشنهاد رزرو بعدی')?></td></tr><?php endforeach;?></table></div><?php echo View::render('نگهداشت مشتری', ob_get_clean()); exit; }
 if($route==='finance' || $route==='reports'){ Auth::requireCan(($route==='finance'?'finance':'reports').'.view'); $from=Jalali::toGregorian($_GET['from']??date('Y-m-01')); $to=Jalali::toGregorian($_GET['to']??date('Y-m-d')); $rev=DB::row("SELECT COUNT(*) sessions, COALESCE(SUM(final_amount),0) revenue, COALESCE(SUM(discount),0) discounts FROM massage_sessions WHERE status='completed' AND massage_date BETWEEN ? AND ?",[$from,$to]); $exp=DB::value('SELECT COALESCE(SUM(amount),0) FROM expenses WHERE expense_date BETWEEN ? AND ? AND deleted_at IS NULL',[$from,$to]); ob_start(); ?><form class="card p-3 mb-3 d-flex flex-row gap-2"><input type="hidden" name="r" value="<?=e($route)?>"><input name="from" class="form-control" value="<?=Jalali::toJalali($from)?>"><input name="to" class="form-control" value="<?=Jalali::toJalali($to)?>"><button class="btn btn-primary">گزارش</button><a class="btn btn-soft" href="<?=url('export.csv',['from'=>$from,'to'=>$to])?>">خروجی CSV</a></form><div class="row g-3"><div class="col-md-3"><div class="stat"><span>درآمد</span><b><?=money($rev['revenue'])?></b></div></div><div class="col-md-3"><div class="stat"><span>هزینه</span><b><?=money($exp)?></b></div></div><div class="col-md-3"><div class="stat"><span>سود خالص</span><b><?=money($rev['revenue']-$exp)?></b></div></div><div class="col-md-3"><div class="stat"><span>تعداد جلسات</span><b><?=Jalali::fa($rev['sessions'])?></b></div></div></div><div class="card p-4 mt-3"><h4>درآمد بر اساس درمانگر/خدمت/منبع معرفی</h4><p>این بخش آماده چاپ و خروجی‌گیری است و داده‌ها از رکوردهای واقعی محاسبه می‌شود.</p></div><?php echo View::render($route==='finance'?'مالی':'گزارش‌ها', ob_get_clean()); exit; }
 if($route==='export.csv'){ Auth::requireCan('reports.view'); header('Content-Type:text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename=report.csv'); echo "date,customer,service,therapist,amount\n"; foreach(DB::select("SELECT ms.massage_date, CONCAT(c.first_name,' ',c.last_name) c, s.name s, t.name t, ms.final_amount FROM massage_sessions ms LEFT JOIN customers c ON c.id=ms.customer_id LEFT JOIN services s ON s.id=ms.service_id LEFT JOIN therapists t ON t.id=ms.therapist_id WHERE ms.massage_date BETWEEN ? AND ?",[$_GET['from'],$_GET['to']]) as $r) echo implode(',',array_map(fn($v)=>'"'.str_replace('"','""',(string)$v).'"',$r))."\n"; exit; }
 if($route==='salaries'){ Auth::requireCan('salaries.view'); $therapists=DB::select("SELECT id,name FROM therapists WHERE status='active'"); $tid=(int)($_GET['therapist_id']??($therapists[0]['id']??0)); $from=Jalali::toGregorian($_GET['from']??date('Y-m-01')); $to=Jalali::toGregorian($_GET['to']??date('Y-m-d')); $calc=$tid?SalaryService::calculate($tid,$from,$to):[]; ob_start(); ?><form class="card p-3 mb-3 d-flex flex-row gap-2"><input type="hidden" name="r" value="salaries"><select name="therapist_id" class="form-select"><?php foreach($therapists as $t): ?><option value="<?=$t['id']?>" <?=$tid===$t['id']?'selected':''?>><?=e($t['name'])?></option><?php endforeach;?></select><input name="from" class="form-control" value="<?=Jalali::toJalali($from)?>"><input name="to" class="form-control" value="<?=Jalali::toJalali($to)?>"><button class="btn btn-primary">محاسبه</button></form><?php if($calc): ?><div class="card p-4"><h3>فیش محاسبات</h3><div class="row g-3"><div class="col"><div class="stat"><span>جلسات</span><b><?=Jalali::fa($calc['session_count'])?></b></div></div><div class="col"><div class="stat"><span>فروش</span><b><?=money($calc['gross'])?></b></div></div><div class="col"><div class="stat"><span>حقوق پایه</span><b><?=money($calc['base_salary'])?></b></div></div><div class="col"><div class="stat"><span>پورسانت</span><b><?=money($calc['commission'])?></b></div></div><div class="col"><div class="stat"><span>قابل پرداخت</span><b><?=money($calc['payable'])?></b></div></div></div></div><?php endif; echo View::render('حقوق و پورسانت', ob_get_clean()); exit; }
-if($route==='users'){ Auth::requireCan('users.manage'); if($_SERVER['REQUEST_METHOD']==='POST'){ $data=['name'=>$_POST['name'],'email'=>$_POST['email'],'role_id'=>(int)$_POST['role_id'],'status'=>$_POST['status'],'permissions'=>json_encode($_POST['permissions']??[],JSON_UNESCAPED_UNICODE),'updated_at'=>date('Y-m-d H:i:s')]; if(!empty($_POST['password'])) $data['password_hash']=password_hash($_POST['password'],PASSWORD_DEFAULT); if(!empty($_POST['id'])) DB::update('users',$data,'id=:id',['id'=>(int)$_POST['id']]); else {$data['created_at']=date('Y-m-d H:i:s'); DB::insert('users',$data);} toast('کاربر ذخیره شد.'); redirect('users'); } $roles=DB::select('SELECT * FROM roles'); $users=DB::select('SELECT u.*, r.name role FROM users u JOIN roles r ON r.id=u.role_id ORDER BY u.id DESC'); ob_start(); ?><div class="row g-3"><div class="col-lg-5"><form method="post" class="card p-3"><?=View::csrf()?><h4>کاربر جدید</h4><input name="name" class="form-control mb-2" placeholder="نام"><input name="email" class="form-control mb-2" placeholder="ایمیل"><input name="password" class="form-control mb-2" placeholder="رمز عبور"><select name="role_id" class="form-select mb-2"><?php foreach($roles as $r): ?><option value="<?=$r['id']?>"><?=e($r['name'])?></option><?php endforeach;?></select><select name="status" class="form-select mb-2"><option value="active">فعال</option><option value="disabled">غیرفعال</option></select><textarea name="permissions[]" class="form-control mb-2" placeholder="مجوزهای اضافه"></textarea><button class="btn btn-primary">ذخیره</button></form></div><div class="col-lg-7"><div class="card p-3"><table class="table"><tr><th>نام</th><th>ایمیل</th><th>نقش</th><th>وضعیت</th></tr><?php foreach($users as $u): ?><tr><td><?=e($u['name'])?></td><td><?=e($u['email'])?></td><td><?=e($u['role'])?></td><td><?=status_badge($u['status'])?></td></tr><?php endforeach;?></table></div></div></div><?php echo View::render('کاربران و نقش‌ها', ob_get_clean()); exit; }
-if($route==='settings'){ Auth::requireCan('settings.manage'); if($_SERVER['REQUEST_METHOD']==='POST'){ foreach($_POST['settings']??[] as $k=>$v){ DB::exec('INSERT INTO settings (`key`,`value`) VALUES (?,?) ON DUPLICATE KEY UPDATE value=VALUES(value)',[$k,$v]); } toast('تنظیمات ذخیره شد.'); redirect('settings'); } $keys=['brand_name'=>'نام برند','primary_color'=>'رنگ اصلی','secondary_color'=>'رنگ دوم','website_title'=>'عنوان وب‌سایت','contact_phone'=>'تلفن','address'=>'آدرس','default_followup_days'=>'بازه پیگیری پیش‌فرض','currency'=>'واحد پول','default_theme'=>'تم پیش‌فرض']; ob_start(); ?><form method="post" class="card p-4"><?=View::csrf()?><div class="row g-3"><?php foreach($keys as $k=>$l): ?><div class="col-md-6"><label class="form-label"><?=$l?></label><input name="settings[<?=$k?>]" value="<?=e(View::setting($k,''))?>" class="form-control"></div><?php endforeach;?></div><button class="btn btn-primary mt-3">ذخیره</button></form><?php echo View::render('تنظیمات', ob_get_clean()); exit; }
+if($route==='users'){
+    Auth::requireCan('users.manage');
+    if($_SERVER['REQUEST_METHOD']==='POST'){
+        $data=['name'=>$_POST['name'],'email'=>$_POST['email'],'role_id'=>(int)$_POST['role_id'],'status'=>$_POST['status'],'permissions'=>json_encode($_POST['permissions']??[],JSON_UNESCAPED_UNICODE),'updated_at'=>date('Y-m-d H:i:s')];
+        if(!empty($_POST['password'])) $data['password_hash']=password_hash($_POST['password'],PASSWORD_DEFAULT);
+        if(!empty($_POST['user_id'])){
+            DB::update('users',$data,'id=:id',['id'=>(int)$_POST['user_id']]);
+            Audit::log('user.update','users',(int)$_POST['user_id']);
+        } else {
+            if(empty($_POST['password'])){$error='رمز عبور برای کاربر جدید الزامی است.';}
+            else{$data['created_at']=date('Y-m-d H:i:s'); DB::insert('users',$data); Audit::log('user.create','users',(int)DB::value('SELECT LAST_INSERT_ID()'));}
+        }
+        if(empty($error)){toast('کاربر ذخیره شد.'); redirect('users');}
+    }
+    $editUser=null; $editId=(int)($_GET['edit_id']??0);
+    if($editId) $editUser=DB::row('SELECT u.*, r.name role_name FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id=?',[$editId]);
+    if($_GET['delete_id']??0){
+        $delId=(int)$_GET['delete_id'];
+        if($delId===Auth::id()){toast('نمی‌توانید خودتان را حذف کنید.');}
+        else{DB::exec('UPDATE users SET deleted_at=NOW() WHERE id=?',[$delId]); Audit::log('user.delete','users',$delId); toast('کاربر حذف شد.');}
+        redirect('users');
+    }
+    $roles=DB::select('SELECT * FROM roles');
+    $users=DB::select('SELECT u.*, r.name role FROM users u JOIN roles r ON r.id=u.role_id WHERE u.deleted_at IS NULL ORDER BY u.id DESC');
+    ob_start(); ?><div class="row g-3"><div class="col-lg-5"><form method="post" class="card p-3"><?=View::csrf()?><?php if(!empty($error)):?><div class="alert alert-danger"><?=e($error)?></div><?php endif;?><h4><?=$editUser?'ویرایش کاربر: '.e($editUser['name']):'کاربر جدید'?></h4><?php if($editUser):?><input type="hidden" name="user_id" value="<?=$editUser['id']?>"><?php endif;?><input name="name" class="form-control mb-2" placeholder="نام" value="<?=e($editUser['name']??'')?>" required><input name="email" class="form-control mb-2" placeholder="ایمیل" type="email" value="<?=e($editUser['email']??'')?>" required><input name="password" class="form-control mb-2" placeholder="<?=$editUser?'رمز جدید (خالی بگذارید تا تغییر نکند)':'رمز عبور'?>" <?=empty($editUser)?'required':''?>><select name="role_id" class="form-select mb-2"><?php foreach($roles as $r): ?><option value="<?=$r['id']?>" <?=((int)($editUser['role_id']??0)===$r['id'])?'selected':''?>><?=e($r['name'])?></option><?php endforeach;?></select><select name="status" class="form-select mb-2"><option value="active" <?=($editUser['status']??'active')==='active'?'selected':''?>>فعال</option><option value="disabled" <?=($editUser['status']??'')==='disabled'?'selected':''?>>غیرفعال</option></select><div class="d-flex gap-2"><button class="btn btn-primary">ذخیره</button><?php if($editUser):?><a class="btn btn-soft" href="<?=url('users')?>">انصراف</a><?php endif;?></div></form></div><div class="col-lg-7"><div class="card p-3"><div class="table-responsive"><table class="table"><tr><th>نام</th><th>ایمیل</th><th>نقش</th><th>وضعیت</th><th>عملیات</th></tr><?php foreach($users as $u): ?><tr><td><?=e($u['name'])?></td><td><?=e($u['email'])?></td><td><?=e($u['role'])?></td><td><?=status_badge($u['status'])?></td><td class="text-nowrap"><a class="btn btn-sm btn-outline-primary" href="<?=url('users',['edit_id'=>$u['id']])?>">ویرایش</a><?php if($u['id']!==Auth::id()):?> <a class="btn btn-sm btn-outline-danger" href="<?=url('users',['delete_id'=>$u['id']])?>" onclick="return confirm('آیا از حذف این کاربر مطمئن هستید؟')">حذف</a><?php endif;?></td></tr><?php endforeach;?></table></div></div></div></div><?php echo View::render('کاربران و نقش‌ها', ob_get_clean()); exit; }
+if($route==='settings'){
+    Auth::requireCan('settings.manage');
+    if($_SERVER['REQUEST_METHOD']==='POST'){
+        // Handle logo upload
+        if(!empty($_FILES['logo_file']['tmp_name'])){
+            $f=$_FILES['logo_file'];
+            $allowed=['image/png','image/jpeg','image/svg+xml','image/webp'];
+            if(in_array($f['type'],$allowed,true)&&$f['size']<5*1024*1024){
+                $ext=pathinfo($f['name'],PATHINFO_EXTENSION);
+                if(!$ext)$ext='png';
+                $dest='uploads/logo.'.$ext;
+                $fullDest=public_path($dest);
+                if(!is_dir(dirname($fullDest)))@mkdir(dirname($fullDest),0775,true);
+                move_uploaded_file($f['tmp_name'],$fullDest);
+                DB::exec('INSERT INTO settings (`key`,`value`) VALUES (?,?) ON DUPLICATE KEY UPDATE value=VALUES(value)',['logo_path',asset($dest)]);
+                Audit::log('settings.logo','settings',0);
+            } else { $logoError='فایل نامعتبر است. فقط PNG/JPG/SVG/WebP تا ۵ مگابایت مجاز است.'; }
+        }
+        // Handle favicon upload
+        if(!empty($_FILES['favicon_file']['tmp_name'])){
+            $f=$_FILES['favicon_file'];
+            $allowed=['image/png','image/x-icon','image/svg+xml','image/webp'];
+            if(in_array($f['type'],$allowed,true)&&$f['size']<2*1024*1024){
+                $ext=pathinfo($f['name'],PATHINFO_EXTENSION);
+                if(!$ext)$ext='png';
+                $dest='uploads/favicon.'.$ext;
+                $fullDest=public_path($dest);
+                if(!is_dir(dirname($fullDest)))@mkdir(dirname($fullDest),0775,true);
+                move_uploaded_file($f['tmp_name'],$fullDest);
+                DB::exec('INSERT INTO settings (`key`,`value`) VALUES (?,?) ON DUPLICATE KEY UPDATE value=VALUES(value)',['favicon_path',asset($dest)]);
+            }
+        }
+        foreach($_POST['settings']??[] as $k=>$v){ DB::exec('INSERT INTO settings (`key`,`value`) VALUES (?,?) ON DUPLICATE KEY UPDATE value=VALUES(value)',[$k,$v]); }
+        toast('تنظیمات ذخیره شد.'); redirect('settings');
+    }
+    $keys=['brand_name'=>'نام برند','primary_color'=>'رنگ اصلی','secondary_color'=>'رنگ دوم','website_title'=>'عنوان وب‌سایت','contact_phone'=>'تلفن','contact_phone_2'=>'تلفن دوم','address'=>'آدرس','default_followup_days'=>'بازه پیگیری پیش‌فرض','currency'=>'واحد پول','default_theme'=>'تم پیش‌فرض (light/dark)','instagram'=>'اینستاگرام','telegram'=>'تلگرام','whatsapp'=>'واتساپ'];
+    $currentLogo=View::setting('logo_path','');
+    $currentFavicon=View::setting('favicon_path','');
+    ob_start(); ?>
+    <form method="post" enctype="multipart/form-data" class="card p-4">
+        <?=View::csrf()?>
+        <?php if(!empty($logoError)):?><div class="alert alert-danger"><?=e($logoError)?></div><?php endif;?>
+        <h4 class="mb-3"><i class="bi bi-palette"></i> برندینگ و لوگو</h4>
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <label class="form-label">لوگوی سامانه</label>
+                <?php if($currentLogo):?><div class="mb-2"><img src="<?=e($currentLogo)?>" alt="logo" style="max-height:80px;border-radius:12px"></div><?php endif;?>
+                <input type="file" name="logo_file" accept="image/*" class="form-control">
+                <div class="form-text">PNG/JPG/SVG/WebP — حداکثر ۵ مگابایت</div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">فاوآیکون</label>
+                <?php if($currentFavicon):?><div class="mb-2"><img src="<?=e($currentFavicon)?>" alt="favicon" style="max-height:40px;border-radius:8px"></div><?php endif;?>
+                <input type="file" name="favicon_file" accept="image/*" class="form-control">
+                <div class="form-text">PNG/ICO/SVG — حداکثر ۲ مگابایت</div>
+            </div>
+        </div>
+        <hr class="my-3">
+        <h4 class="mb-3"><i class="bi bi-gear"></i> تنظیمات عمومی</h4>
+        <div class="row g-3">
+            <?php foreach($keys as $k=>$l): ?><div class="col-md-6"><label class="form-label"><?=$l?></label><input name="settings[<?=$k?>]" value="<?=e(View::setting($k,''))?>" class="form-control"></div><?php endforeach;?>
+        </div>
+        <button class="btn btn-primary mt-4"><i class="bi bi-check-lg"></i> ذخیره تنظیمات</button>
+    </form>
+    <?php echo View::render('تنظیمات', ob_get_clean()); exit; }
 if($route==='backup'){ Auth::requireCan('backup.manage'); $error=null; if($_SERVER['REQUEST_METHOD']==='POST'){ try{BackupService::create(); toast('پشتیبان تهیه شد.'); redirect('backup');}catch(Throwable $e){$error=$e->getMessage();}} ob_start(); if($error) echo '<div class="alert alert-danger">'.e($error).'</div>'; ?><div class="card p-4"><form method="post"><?=View::csrf()?><button class="btn btn-primary">ایجاد بکاپ دستی</button></form><h4 class="mt-4">فایل‌های بکاپ</h4><ul><?php foreach(BackupService::list() as $f): ?><li><?=e($f)?></li><?php endforeach;?></ul><p class="text-muted">برای بکاپ زمان‌بندی‌شده از cron طبق مستندات استفاده کنید.</p></div><?php echo View::render('پشتیبان‌گیری', ob_get_clean()); exit; }
 if($route==='audit'){ Auth::requireCan('audit.view'); $rows=DB::select('SELECT a.*, u.name user FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 200'); ob_start(); ?><div class="card p-3"><table class="table"><tr><th>زمان</th><th>کاربر</th><th>عمل</th><th>رکورد</th><th>IP</th></tr><?php foreach($rows as $r): ?><tr><td><?=Jalali::toJalali($r['created_at'])?></td><td><?=e($r['user'])?></td><td><?=e($r['action'])?></td><td><?=e($r['entity'].' #'.$r['entity_id'])?></td><td><?=e($r['ip_address'])?></td></tr><?php endforeach;?></table></div><?php echo View::render('ممیزی', ob_get_clean()); exit; }
 http_response_code(404); echo View::render('یافت نشد','<div class="alert alert-warning">صفحه یافت نشد.</div>');
