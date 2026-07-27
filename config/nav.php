@@ -1,0 +1,22 @@
+<?php
+return [
+ ['route'=>'dashboard','label'=>'داشبورد','icon'=>'bi-speedometer2','perm'=>'dashboard.view'],
+ ['route'=>'customers','label'=>'مشتریان','icon'=>'bi-people','perm'=>'customers.view'],
+ ['route'=>'appointments','label'=>'نوبت‌ها','icon'=>'bi-calendar-week','perm'=>'appointments.view'],
+ ['route'=>'sessions','label'=>'جلسات ماساژ','icon'=>'bi-clipboard2-pulse','perm'=>'sessions.view'],
+ ['route'=>'followups','label'=>'مرکز پیگیری','icon'=>'bi-telephone-outbound','perm'=>'followups.view'],
+ ['route'=>'retention','label'=>'نگهداشت مشتری','icon'=>'bi-heart-pulse','perm'=>'customers.view'],
+ ['route'=>'services','label'=>'خدمات','icon'=>'bi-stars','perm'=>'services.view'],
+ ['route'=>'therapists','label'=>'درمانگران','icon'=>'bi-person-badge','perm'=>'therapists.view'],
+ ['route'=>'finance','label'=>'مالی','icon'=>'bi-cash-coin','perm'=>'finance.view'],
+ ['route'=>'salaries','label'=>'حقوق و پورسانت','icon'=>'bi-wallet2','perm'=>'salaries.view'],
+ ['route'=>'expenses','label'=>'هزینه‌ها','icon'=>'bi-receipt','perm'=>'expenses.view'],
+ ['route'=>'packages','label'=>'پکیج‌ها','icon'=>'bi-box-seam','perm'=>'packages.view'],
+ ['route'=>'inventory','label'=>'انبار','icon'=>'bi-archive','perm'=>'inventory.view'],
+ ['route'=>'campaigns','label'=>'کمپین‌ها','icon'=>'bi-megaphone','perm'=>'campaigns.view'],
+ ['route'=>'reports','label'=>'گزارش‌ها','icon'=>'bi-bar-chart','perm'=>'reports.view'],
+ ['route'=>'users','label'=>'کاربران و نقش‌ها','icon'=>'bi-shield-lock','perm'=>'users.manage'],
+ ['route'=>'audit','label'=>'ممیزی','icon'=>'bi-journal-check','perm'=>'audit.view'],
+ ['route'=>'settings','label'=>'تنظیمات','icon'=>'bi-gear','perm'=>'settings.manage'],
+ ['route'=>'backup','label'=>'پشتیبان‌گیری','icon'=>'bi-database-down','perm'=>'backup.manage'],
+];
