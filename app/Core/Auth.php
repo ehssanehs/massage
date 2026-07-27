@@ -13,7 +13,12 @@ final class Auth {
     public static function login(string $email, string $password): bool {
         $u = DB::row("SELECT * FROM users WHERE email=? AND status='active' LIMIT 1", [$email]);
         if (!$u || !password_verify($password, $u['password_hash'])) return false;
-        session_regenerate_id(true); $_SESSION['uid']=(int)$u['id']; DB::exec("UPDATE users SET last_login_at=NOW() WHERE id=?", [$u['id']]); Audit::log('login','users',(int)$u['id']); return true;
+        $_SESSION['uid']=(int)$u['id'];
+        session_regenerate_id(true);
+        DB::exec("UPDATE users SET last_login_at=NOW() WHERE id=?", [$u['id']]);
+        Audit::log('login','users',(int)$u['id']);
+        session_write_close();
+        return true;
     }
     public static function logout(): void { if (self::id()) Audit::log('logout','users',self::id()); $_SESSION=[]; session_destroy(); }
     public static function requireLogin(): void { if (!self::user()) redirect('login'); }
