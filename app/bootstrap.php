@@ -31,8 +31,7 @@ function env_value(string $key, mixed $default = null): mixed {
 function base_path(string $path = ''): string { return dirname(__DIR__) . ($path ? '/' . ltrim($path, '/') : ''); }
 function public_path(string $path = ''): string { return base_path('public' . ($path ? '/' . ltrim($path, '/') : '')); }
 function e(mixed $value): string { return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
-function redirect(string $route, array $params = []): never { if (session_status() === PHP_SESSION_ACTIVE) session_write_close(); $q = http_build_query(array_merge(['r'=>$route], $params)); header('Location: index.php?' . $q); exit; }
-function url(string $route, array $params = []): string { return 'index.php?' . http_build_query(array_merge(['r'=>$route], $params)); }
+function redirect(string $route, array $params = []): never { if (session_status() === PHP_SESSION_ACTIVE) session_write_close(); $q = http_build_query(array_merge(['r'=>$route], $params)); header('Location: index.php?' . $q); exit; }function url(string $route, array $params = []): string { return 'index.php?' . http_build_query(array_merge(['r'=>$route], $params)); }
 function asset(string $path): string { return 'assets/' . ltrim($path, '/'); }
 
 $lang = require base_path('config/lang/fa.php');
