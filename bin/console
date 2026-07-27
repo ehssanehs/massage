@@ -14,6 +14,16 @@ try {
         DB::pdo()->exec(file_get_contents(base_path('database/migrations/001_create_schema.sql')));
         DB::pdo()->exec(file_get_contents(base_path('database/seeders/001_seed_defaults.sql')));
         echo "Application installed. Default admin: admin@example.com / password\n";
+    } elseif ($cmd === 'user:password') {
+        $email = $argv[2] ?? 'admin@example.com';
+        $plain = $argv[3] ?? 'password';
+        $hash = password_hash($plain, PASSWORD_DEFAULT);
+        $n = DB::exec("UPDATE users SET password_hash=?, status='active', updated_at=NOW() WHERE email=?", [$hash, $email]);
+        if ($n === 0) {
+            fwrite(STDERR, "No user found with email $email\n");
+            exit(1);
+        }
+        echo "Password updated for $email\n";
     } elseif ($cmd === 'schedule:run') {
         $n = FollowUpService::generateDueFromLastSessions();
         $low = DB::select('SELECT * FROM inventory_items WHERE quantity <= minimum_quantity AND status="active"');
@@ -21,6 +31,6 @@ try {
     } elseif ($cmd === 'backup:create') {
         echo BackupService::create() . "\n";
     } else {
-        echo "Commands: install, migrate, seed, schedule:run, backup:create\n";
+        echo "Commands: install, migrate, seed, user:password [email] [password], schedule:run, backup:create\n";
     }
 } catch (Throwable $e) { fwrite(STDERR, $e->getMessage()."\n"); exit(1); }

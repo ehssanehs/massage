@@ -320,8 +320,8 @@ INSERT INTO roles (id,name,slug,permissions,created_at) VALUES
 ON DUPLICATE KEY UPDATE name=VALUES(name), permissions=VALUES(permissions);
 
 INSERT INTO users (id,branch_id,role_id,name,email,password_hash,status,permissions,created_at) VALUES
-(1,1,1,'مدیر سیستم','admin@example.com','$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi','active','["*"]',NOW())
-ON DUPLICATE KEY UPDATE email=VALUES(email);
+(1,1,1,'مدیر سیستم','admin@example.com','$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi','active','["*"]',NOW())
+ON DUPLICATE KEY UPDATE email=VALUES(email), password_hash=VALUES(password_hash), status=VALUES(status), role_id=VALUES(role_id), permissions=VALUES(permissions);
 
 INSERT INTO settings (`key`,`value`,type,group_name,updated_at) VALUES
 ('brand_name','مرکز ماساژ آرامش','text','branding',NOW()),
