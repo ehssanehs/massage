@@ -5,3 +5,6 @@ public/storage/backups/*
 !public/storage/backups/.gitkeep
 *.log
 .DS_Store
+# Local session files (fallback session storage)
+storage/sessions/*
+!storage/sessions/.gitkeep

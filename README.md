@@ -558,7 +558,31 @@ sudo chown -R www:www /www/wwwroot/your-domain.com  # aaPanel
 sudo chmod -R 755 /var/www/massage
 sudo chmod -R 775 /var/www/massage/public/uploads
 sudo chmod -R 775 /var/www/massage/public/storage
+sudo chmod -R 775 /var/www/massage/storage
 ```
+
+### مشکل: بعد از وارد کردن ایمیل و رمز عبور، دوباره فرم ورود نمایش داده می‌شود (بدون هیچ خطایی)
+
+این یعنی اطلاعات ورود صحیح بوده اما «نشست» (Session) بین صفحات حفظ نمی‌شود.
+
+**راه‌حل:**
+1. مطمئن شوید پوشه `storage/sessions` وجود دارد و توسط وب‌سرور قابل نوشتن است (سامانه به‌صورت خودکار از آن به‌عنوان مسیر ذخیره نشست استفاده می‌کند وقتی مسیر پیش‌فرض PHP خراب است):
+   ```bash
+   mkdir -p storage/sessions
+   sudo chown -R www-data:www-data storage
+   sudo chmod -R 775 storage
+   ```
+2. اگر سایت بدون HTTPS اجرا می‌شود، در فایل `.env` حتماً `SESSION_SECURE=false` باشد؛ وگرنه مرورگر کوکی نشست را برنمی‌گرداند.
+3. کوکی‌های مرورگر را بررسی کنید (حالت ناشناس/افزونه‌های مسدودکننده را تست کنید یا با مرورگر دیگری امتحان کنید).
+4. اگر با `php -S` یا وب‌سرور دیگری اجرا می‌کنید، صفحه را با همان آدرسی باز کنید که کوکی برای آن صادر شده است (مثلاً `localhost` با `127.0.0.1` متفاوت است).
+
+### مشکل: رمز عبور مدیر را نمی‌دانم / فراموش کرده‌ام
+
+**راه‌حل:** رمز را از خط فرمان بازنشانی کنید:
+```bash
+php bin/console user:password admin@example.com رمز_جدید
+```
+سپس با ایمیل و رمز جدید وارد شوید.
 
 ---
 
