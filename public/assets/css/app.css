@@ -300,6 +300,72 @@ html[data-bs-theme="dark"] .result-chip{
     }
 }
 
+/* ===== JALALI DATEPICKER - Persian Calendar Overrides ===== */
+jdp-container{
+    z-index:99999 !important;
+    font-family:Vazirmatn,Tahoma,sans-serif !important;
+    border-radius:18px !important;
+    box-shadow:0 20px 50px rgba(31,41,55,.18) !important;
+    border:1px solid rgba(124,58,237,.12) !important;
+    overflow:hidden;
+}
+jdp-container .jdp-day-name{
+    color:var(--muted) !important;
+    font-weight:600 !important;
+}
+jdp-container .jdp-days .jdp-day.selected,
+jdp-container .jdp-days .jdp-day.jdp-selected{
+    background:linear-gradient(135deg,var(--primary),#9f67ff) !important;
+    color:#fff !important;
+    border-radius:12px !important;
+}
+jdp-container .jdp-days .jdp-day:hover{
+    background:rgba(124,58,237,.12) !important;
+    border-radius:12px !important;
+}
+jdp-container .jdp-months .jdp-month.selected{
+    background:var(--primary) !important;
+    color:#fff !important;
+    border-radius:12px !important;
+}
+jdp-container .jdp-years .jdp-year.selected{
+    background:var(--primary) !important;
+    color:#fff !important;
+}
+jdp-container .jdp-footer{
+    background:rgba(124,58,237,.04) !important;
+    border-top:1px solid rgba(124,58,237,.08) !important;
+}
+jdp-container button{
+    border-radius:10px !important;
+    font-family:Vazirmatn !important;
+}
+.input-group .input-group-text{
+    border-radius:14px;
+    background:rgba(124,58,237,.08);
+    border-color:rgba(124,58,237,.16);
+    color:var(--primary);
+}
+.input-group .form-control[data-jdp]{
+    border-radius:14px !important;
+    cursor:pointer;
+    background-image:none !important;
+}
+html[data-bs-theme="dark"] jdp-container{
+    background:#1e293b !important;
+    border-color:rgba(255,255,255,.12) !important;
+    color:#e5e7eb !important;
+}
+html[data-bs-theme="dark"] jdp-container .jdp-header{
+    background:#0f172a !important;
+    color:#e5e7eb !important;
+}
+html[data-bs-theme="dark"] .input-group .input-group-text{
+    background:rgba(124,58,237,.15);
+    border-color:#374151;
+    color:#a78bfa;
+}
+
 /* ===== PRINT ===== */
 @media print{
     .sidebar,.topbar,.btn,form{display:none!important}
