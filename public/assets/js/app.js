@@ -2,6 +2,45 @@ document.addEventListener('DOMContentLoaded', () => {
     const root = document.documentElement;
     const toggle = document.getElementById('themeToggle');
 
+    // Jalali DatePicker - Persian Calendar for all date inputs
+    if (window.jalaliDatepicker) {
+        try {
+            jalaliDatepicker.startWatch({
+                minDate: "attr",
+                maxDate: "attr",
+                time: false,
+                hasSecond: false,
+                separatorChars: { date: "/" },
+                format: "YYYY/MM/DD",
+                persianDigits: true,
+                hideAfterChange: true,
+                autoHide: true,
+                showTodayBtn: true,
+                showEmptyBtn: true,
+                todayBtnText: "امروز",
+                emptyBtnText: "حذف",
+                zIndex: 9999
+            });
+        } catch (e) {
+            console.warn('JalaliDatePicker init failed', e);
+        }
+
+        // Re-init on dynamically added inputs (e.g., after AJAX)
+        const observer = new MutationObserver(() => {
+            try { jalaliDatepicker.startWatch(); } catch {}
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    // Fallback: convert any input[type=date] that still exists to jalali text input
+    document.querySelectorAll('input[type=\"date\"]').forEach(inp => {
+        inp.type = 'text';
+        inp.setAttribute('data-jdp', '');
+        inp.setAttribute('placeholder', '1404/01/01');
+        inp.setAttribute('autocomplete', 'off');
+        inp.classList.add('jalali-fallback');
+    });
+
     // Apply saved theme immediately
     const saved = localStorage.getItem('theme');
     if (saved) {

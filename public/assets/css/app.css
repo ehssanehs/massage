@@ -167,6 +167,205 @@ html[data-bs-theme="dark"] .badge{opacity:.9}
     .table{min-width:780px}
 }
 
+/* ===== INVENTORY ALARM ===== */
+.alert-card{
+    background:rgba(255,255,255,.92);
+    border:1px solid rgba(124,58,237,.12);
+    border-radius:var(--radius);
+    box-shadow:0 18px 45px rgba(31,41,55,.06);
+    padding:20px;
+}
+.inventory-alert{
+    border:1px solid rgba(220,38,38,.18);
+    background:linear-gradient(135deg,rgba(254,242,242,.95),rgba(255,255,255,.92));
+}
+.table-danger-light{
+    --bs-table-bg: rgba(254,226,226,.55);
+}
+.bg-warning-subtle{
+    background:linear-gradient(135deg,rgba(254,249,195,.9),rgba(255,255,255,.9)) !important;
+}
+.result-chip{
+    display:inline-block;
+    background:rgba(124,58,237,.08);
+    border:1px solid rgba(124,58,237,.12);
+    border-radius:10px;
+    padding:4px 10px;
+    font-size:12px;
+    max-width:180px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+/* ===== FOLLOWUP PAGE ===== */
+.followup-page .stat-followup{
+    min-height:96px;
+    padding:16px 18px;
+    transition:transform .15s ease, box-shadow .15s ease;
+}
+.followup-page .stat-followup:hover{
+    transform:translateY(-2px);
+    box-shadow:0 14px 30px rgba(31,41,55,.1);
+}
+.followup-group-card{
+    border-radius:var(--radius);
+    overflow:hidden;
+}
+.followup-group-card .card-header{
+    padding:14px 18px;
+    border-bottom:1px solid rgba(124,58,237,.1);
+    background:rgba(124,58,237,.03);
+}
+.followup-table{
+    font-size:14px;
+}
+.followup-table thead th{
+    font-weight:700;
+    font-size:13px;
+    color:var(--muted);
+    white-space:nowrap;
+    border-bottom-width:1px;
+}
+.followup-table tbody td{
+    vertical-align:middle;
+}
+.followup-action-form{
+    background:rgba(124,58,237,.04);
+    border:1px solid rgba(124,58,237,.08);
+    border-radius:12px;
+    padding:6px 8px;
+}
+.followup-action-form .form-select-sm,
+.followup-action-form .form-control-sm{
+    border-radius:10px;
+    font-size:13px;
+    padding:.35rem .6rem;
+}
+.empty-state{
+    max-width:520px;
+    margin:0 auto;
+}
+.empty-state i{
+    width:72px;height:72px;
+    display:grid;place-items:center;
+    background:linear-gradient(135deg,rgba(124,58,237,.12),rgba(20,184,166,.12));
+    border-radius:20px;
+    margin:0 auto;
+    color:var(--primary);
+}
+
+html[data-bs-theme="dark"] .alert-card,
+html[data-bs-theme="dark"] .inventory-alert{
+    background:rgba(15,23,42,.92) !important;
+    border-color:rgba(255,255,255,.08) !important;
+}
+html[data-bs-theme="dark"] .inventory-alert{
+    background:linear-gradient(135deg,rgba(127,29,29,.18),rgba(15,23,42,.92)) !important;
+    border-color:rgba(220,38,38,.35) !important;
+}
+html[data-bs-theme="dark"] .table-danger-light{
+    --bs-table-bg: rgba(127,29,29,.18);
+}
+html[data-bs-theme="dark"] .followup-group-card .card-header{
+    background:rgba(124,58,237,.08);
+    border-color:rgba(255,255,255,.08);
+}
+html[data-bs-theme="dark"] .followup-action-form{
+    background:rgba(124,58,237,.08);
+    border-color:rgba(255,255,255,.08);
+}
+html[data-bs-theme="dark"] .result-chip{
+    background:rgba(124,58,237,.15);
+    border-color:rgba(124,58,237,.25);
+    color:#c4b5fd;
+}
+
+/* ===== IMPROVED RESPONSIVE FOR FOLLOWUP ===== */
+@media(max-width:768px){
+    .followup-table{
+        min-width:900px;
+    }
+    .followup-action-form{
+        padding:8px;
+    }
+    .followup-action-form .d-flex{
+        flex-direction:column !important;
+        align-items:stretch !important;
+    }
+    .followup-action-form select,
+    .followup-action-form input{
+        width:100% !important;
+        min-width:unset !important;
+    }
+}
+
+/* ===== JALALI DATEPICKER - Persian Calendar Overrides ===== */
+jdp-container{
+    z-index:99999 !important;
+    font-family:Vazirmatn,Tahoma,sans-serif !important;
+    border-radius:18px !important;
+    box-shadow:0 20px 50px rgba(31,41,55,.18) !important;
+    border:1px solid rgba(124,58,237,.12) !important;
+    overflow:hidden;
+}
+jdp-container .jdp-day-name{
+    color:var(--muted) !important;
+    font-weight:600 !important;
+}
+jdp-container .jdp-days .jdp-day.selected,
+jdp-container .jdp-days .jdp-day.jdp-selected{
+    background:linear-gradient(135deg,var(--primary),#9f67ff) !important;
+    color:#fff !important;
+    border-radius:12px !important;
+}
+jdp-container .jdp-days .jdp-day:hover{
+    background:rgba(124,58,237,.12) !important;
+    border-radius:12px !important;
+}
+jdp-container .jdp-months .jdp-month.selected{
+    background:var(--primary) !important;
+    color:#fff !important;
+    border-radius:12px !important;
+}
+jdp-container .jdp-years .jdp-year.selected{
+    background:var(--primary) !important;
+    color:#fff !important;
+}
+jdp-container .jdp-footer{
+    background:rgba(124,58,237,.04) !important;
+    border-top:1px solid rgba(124,58,237,.08) !important;
+}
+jdp-container button{
+    border-radius:10px !important;
+    font-family:Vazirmatn !important;
+}
+.input-group .input-group-text{
+    border-radius:14px;
+    background:rgba(124,58,237,.08);
+    border-color:rgba(124,58,237,.16);
+    color:var(--primary);
+}
+.input-group .form-control[data-jdp]{
+    border-radius:14px !important;
+    cursor:pointer;
+    background-image:none !important;
+}
+html[data-bs-theme="dark"] jdp-container{
+    background:#1e293b !important;
+    border-color:rgba(255,255,255,.12) !important;
+    color:#e5e7eb !important;
+}
+html[data-bs-theme="dark"] jdp-container .jdp-header{
+    background:#0f172a !important;
+    color:#e5e7eb !important;
+}
+html[data-bs-theme="dark"] .input-group .input-group-text{
+    background:rgba(124,58,237,.15);
+    border-color:#374151;
+    color:#a78bfa;
+}
+
 /* ===== PRINT ===== */
 @media print{
     .sidebar,.topbar,.btn,form{display:none!important}
