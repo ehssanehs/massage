@@ -6,7 +6,7 @@ final class Auth {
     public static function user(): ?array {
         if (empty($_SESSION['uid'])) return null;
         static $user = null; if ($user) return $user;
-        $user = DB::row("SELECT u.*, r.name role_name, r.slug role_slug FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id=? AND u.status='active'", [$_SESSION['uid']]);
+        $user = DB::row("SELECT u.*, r.name role_name, r.slug role_slug FROM users u LEFT JOIN roles r ON r.id=u.role_id WHERE u.id=? AND u.status='active'", [$_SESSION['uid']]);
         return $user ?: null;
     }
     public static function id(): ?int { return self::user()['id'] ?? null; }
