@@ -8,5 +8,9 @@ return [
  // Segments
  'vip'=>'VIP','new'=>'جدید','at_risk'=>'در معرض ریزش','lost'=>'از دست رفته',
  // Payment
- 'paid'=>'پرداخت شده','partial'=>'بخشی','unpaid'=>'پرداخت نشده'
+ 'paid'=>'پرداخت شده','partial'=>'بخشی','unpaid'=>'پرداخت نشده',
+ // Appointment / package / campaign statuses
+ 'arrived'=>'حاضر شده','in_progress'=>'در حال انجام','draft'=>'پیش‌نویس','scheduled'=>'زمان‌بندی شده','sent'=>'ارسال شده','expired'=>'منقضی',
+ // User / misc
+ 'disabled'=>'غیرفعال','male'=>'آقا','female'=>'خانم'
 ];

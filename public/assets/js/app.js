@@ -2,44 +2,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const root = document.documentElement;
     const toggle = document.getElementById('themeToggle');
 
-    // Jalali DatePicker - Persian Calendar for all date inputs
-    if (window.jalaliDatepicker) {
+    // ---------------------------------------------------------------
+    // Jalali DatePicker — local, dependency-free picker (no CDN).
+    // Converts stray input[type=date] fields and enhances input[data-jdp].
+    // ---------------------------------------------------------------
+    if (window.JalaliPicker) {
         try {
-            jalaliDatepicker.startWatch({
-                minDate: "attr",
-                maxDate: "attr",
-                time: false,
-                hasSecond: false,
-                separatorChars: { date: "/" },
-                format: "YYYY/MM/DD",
-                persianDigits: true,
-                hideAfterChange: true,
-                autoHide: true,
-                showTodayBtn: true,
-                showEmptyBtn: true,
-                todayBtnText: "امروز",
-                emptyBtnText: "حذف",
-                zIndex: 9999
-            });
+            JalaliPicker.init();
         } catch (e) {
-            console.warn('JalaliDatePicker init failed', e);
+            console.warn('JalaliPicker init failed', e);
         }
-
-        // Re-init on dynamically added inputs (e.g., after AJAX)
-        const observer = new MutationObserver(() => {
-            try { jalaliDatepicker.startWatch(); } catch {}
+    } else {
+        // Graceful degradation: at least make native date inputs typeable;
+        // the server parses "1404/05/09" (latin or persian digits) too.
+        document.querySelectorAll('input[type="date"]').forEach(inp => {
+            inp.type = 'text';
+            if (!inp.getAttribute('placeholder')) {
+                inp.setAttribute('placeholder', '1404/01/01');
+            }
+            inp.setAttribute('autocomplete', 'off');
         });
-        observer.observe(document.body, { childList: true, subtree: true });
     }
-
-    // Fallback: convert any input[type=date] that still exists to jalali text input
-    document.querySelectorAll('input[type=\"date\"]').forEach(inp => {
-        inp.type = 'text';
-        inp.setAttribute('data-jdp', '');
-        inp.setAttribute('placeholder', '1404/01/01');
-        inp.setAttribute('autocomplete', 'off');
-        inp.classList.add('jalali-fallback');
-    });
 
     // Apply saved theme immediately
     const saved = localStorage.getItem('theme');

@@ -34,7 +34,10 @@ final class Security {
             exit;
         }
 
-        // Token exists in session — validate the submitted value
+        // Token exists in session — validate the submitted value.
+        // NOTE: the token is intentionally NOT rotated here. Rotating it on
+        // every POST invalidates every other open tab / duplicated form and
+        // surfaces as random "خطای امنیتی (CSRF)" pages on normal usage.
         if (!$submitted || !hash_equals($expected, (string)$submitted)) {
             http_response_code(419);
             echo '<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><title>خطا</title>'
@@ -46,8 +49,6 @@ final class Security {
             exit;
         }
 
-        // Valid — regenerate token so it can't be reused
-        $_SESSION['_csrf'] = bin2hex(random_bytes(32));
     }
 
     public static function rateLimit(string $key, int $max, int $seconds): bool {
