@@ -1,0 +1,123 @@
+/* Jalali date picker — styles for the dependency-free picker in
+   assets/js/jalalidatepicker.js. Supports light/dark via data-bs-theme. */
+
+.jdp-popup {
+    display: none;
+    position: absolute;
+    z-index: 3000;
+    background: #ffffff;
+    border: 1px solid rgba(124, 58, 237, .18);
+    border-radius: 16px;
+    box-shadow: 0 18px 50px rgba(17, 24, 39, .18);
+    padding: 12px;
+    direction: rtl;
+    font-family: Vazirmatn, Tahoma, sans-serif;
+    user-select: none;
+}
+.jdp-popup.open { display: block; }
+
+.jdp-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+.jdp-title {
+    flex: 1;
+    text-align: center;
+    font-weight: 700;
+    font-size: 15px;
+    color: #1f2937;
+}
+.jdp-nav {
+    border: 0;
+    background: rgba(124, 58, 237, .08);
+    color: var(--primary, #7c3aed);
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background .15s ease;
+}
+.jdp-nav:hover { background: rgba(124, 58, 237, .2); }
+
+.jdp-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 3px;
+}
+.jdp-wd {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: #6b7280;
+    padding: 4px 0;
+}
+.jdp-day {
+    border: 0;
+    background: transparent;
+    border-radius: 10px;
+    padding: 6px 0;
+    text-align: center;
+    font-size: 13px;
+    color: #1f2937;
+    cursor: pointer;
+    transition: background .12s ease, color .12s ease;
+}
+.jdp-day:hover:not(.jdp-empty) { background: rgba(124, 58, 237, .12); }
+.jdp-day.jdp-empty { cursor: default; }
+.jdp-day.today {
+    outline: 1.5px dashed var(--primary, #7c3aed);
+    outline-offset: -2px;
+    font-weight: 700;
+}
+.jdp-day.selected {
+    background: var(--primary, #7c3aed);
+    color: #fff;
+    font-weight: 700;
+}
+.jdp-day.selected:hover { background: var(--primary, #7c3aed); }
+
+.jdp-foot {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+}
+.jdp-btn {
+    flex: 1;
+    border: 0;
+    border-radius: 10px;
+    padding: 6px 4px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(124, 58, 237, .08);
+    color: var(--primary, #7c3aed);
+    cursor: pointer;
+    transition: background .15s ease;
+}
+.jdp-btn:hover { background: rgba(124, 58, 237, .18); }
+.jdp-btn.jdp-danger { background: rgba(220, 38, 38, .08); color: #dc2626; }
+.jdp-btn.jdp-danger:hover { background: rgba(220, 38, 38, .16); }
+
+input.jalali-input { cursor: pointer; }
+
+/* Dark theme */
+html[data-bs-theme="dark"] .jdp-popup {
+    background: #1e1b2e;
+    border-color: rgba(255, 255, 255, .12);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .55);
+}
+html[data-bs-theme="dark"] .jdp-title { color: #f3f4f6; }
+html[data-bs-theme="dark"] .jdp-day { color: #e5e7eb; }
+html[data-bs-theme="dark"] .jdp-day:hover:not(.jdp-empty) { background: rgba(167, 139, 250, .22); }
+html[data-bs-theme="dark"] .jdp-day.selected { background: var(--primary, #a78bfa); color: #17132a; }
+html[data-bs-theme="dark"] .jdp-nav {
+    background: rgba(167, 139, 250, .15);
+    color: #c4b5fd;
+}
+html[data-bs-theme="dark"] .jdp-btn {
+    background: rgba(167, 139, 250, .15);
+    color: #c4b5fd;
+}

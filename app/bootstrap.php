@@ -52,6 +52,40 @@ function t(string $key, ?string $fallback = null): string { global $lang; return
 
 date_default_timezone_set(env_value('APP_TIMEZONE', 'Asia/Tehran'));
 
+// --- Error handling ---------------------------------------------------------
+// A fatal error with display_errors=off shows the user a completely blank
+// white page with no explanation. Instead, register a handler that renders a
+// friendly (DEBUG-aware) error page so problems are always visible/reportable.
+$__appDebug = filter_var(env_value('APP_DEBUG', false), FILTER_VALIDATE_BOOLEAN);
+if ($__appDebug) {
+    error_reporting(E_ALL);
+    ini_set('display_errors', '1');
+} else {
+    error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
+    ini_set('display_errors', '0');
+}
+if (PHP_SAPI !== 'cli') {
+    set_exception_handler(function (Throwable $e) use ($__appDebug): void {
+        if (!headers_sent()) http_response_code(500);
+        // Discard any half-rendered output so the error page is clean.
+        while (ob_get_level() > 0) { if (!@ob_end_clean()) break; }
+        error_log('[massage-crm] ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+        $detail = '';
+        if ($__appDebug) {
+            $detail = '<pre>' . htmlspecialchars($e->getMessage() . "\n\n" . $e->getFile() . ':' . $e->getLine() . "\n" . $e->getTraceAsString(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</pre>';
+        }
+        echo '<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>خطا</title>'
+            . '<style>body{font-family:Vazirmatn,Tahoma,sans-serif;display:grid;place-items:center;min-height:100vh;background:#f5f3ff;margin:0;padding:20px;box-sizing:border-box}'
+            . '.box{background:#fff;padding:36px;border-radius:18px;max-width:720px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.08);text-align:center}'
+            . 'pre{background:#f8f9fa;padding:12px;border-radius:10px;overflow:auto;font-size:12px;max-height:300px;direction:ltr;text-align:left}'
+            . 'a{display:inline-block;margin-top:16px;padding:10px 26px;background:#7c3aed;color:#fff;border-radius:12px;text-decoration:none}</style></head>'
+            . '<body><div class="box"><h2>متأسفیم، خطایی رخ داد</h2><p>هنگام پردازش درخواست شما مشکلی پیش آمد. لطفاً دوباره تلاش کنید؛ اگر تکرار شد موضوع را به مدیر سیستم اطلاع دهید.</p>'
+            . $detail
+            . '<a href="index.php">بازگشت به صفحه اصلی</a></div></body></html>';
+        exit(1);
+    });
+}
+
 // --- Session hardening -----------------------------------------------------
 // On many shared hosts / panels the default session.save_path is missing or
 // not writable by the PHP process. Session files are then silently discarded,
