@@ -14,6 +14,9 @@ final class DB {
             self::$pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES=>false]);
             return self::$pdo;
         } catch (PDOException $e) {
+            // Console checks must fail with a non-zero exit code, not an HTML
+            // error followed by exit(0), which could look like a successful check.
+            if (PHP_SAPI === 'cli') throw $e;
             http_response_code(500);
             echo '<div style="font-family:tahoma;direction:rtl;margin:40px"><h2>خطای اتصال پایگاه داده</h2><p>فایل .env و اطلاعات MySQL را بررسی کنید.</p><pre>'.htmlspecialchars($e->getMessage()).'</pre></div>';
             exit;

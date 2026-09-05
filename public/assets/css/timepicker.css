@@ -1,0 +1,40 @@
+/* Local clock input and touch-friendly 24-hour picker. */
+.time-input-group{display:flex;align-items:stretch;gap:8px;direction:ltr}
+.time-input-group .time-input{min-width:0;width:100%;text-align:center;direction:ltr;unicode-bidi:plaintext;font-variant-numeric:tabular-nums;font-size:1.1rem}
+.time-input-group .time-toggle{display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;direction:rtl;min-height:44px;padding:8px 12px}
+[data-time-toggle][hidden],[data-time-error][hidden],.time-picker[hidden],.time-picker [hidden]{display:none!important}
+.time-hint{font-size:.77rem;line-height:1.8;color:var(--muted,#6b7280);margin-top:6px}
+.time-input-error,.time-picker-error{color:#b91c1c;font-size:.8rem;line-height:1.8;margin-top:5px}
+.time-input-group .time-input.time-invalid{border-color:#dc2626!important}
+.time-picker{position:fixed;z-index:3100;box-sizing:border-box;width:360px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow-y:auto;overscroll-behavior:contain;padding:16px;border:1px solid rgba(124,58,237,.18);border-radius:20px;background:#fff;color:#1f2937;box-shadow:0 16px 52px rgba(15,23,42,.22);font-family:Vazirmatn,Tahoma,sans-serif}
+.time-picker *{box-sizing:border-box}
+.time-picker-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.time-picker-heading strong{font-size:1rem}
+.time-picker-heading small{display:block;margin-top:4px;color:#6b7280;font-size:.75rem}
+.time-picker button{cursor:pointer;font:inherit;border:1px solid rgba(124,58,237,.16);border-radius:10px;background:#f7f5ff;color:inherit;min-height:44px;padding:6px;font-variant-numeric:tabular-nums;touch-action:manipulation}
+.time-picker button:hover{background:#ede9fe}
+.time-picker button:focus-visible,.time-picker input:focus-visible,.time-toggle:focus-visible{outline:3px solid var(--primary,#7c3aed);outline-offset:2px}
+.time-picker .time-picker-close{border:0;background:transparent;font-size:1.6rem;min-width:44px;line-height:1}
+.time-picker-parts{display:flex;justify-content:center;align-items:flex-end;gap:10px;margin:0 0 12px;text-align:center}
+.time-picker-parts label{display:flex;flex-direction:column;gap:5px;color:#6b7280;font-size:.75rem}
+.time-picker-parts input{width:86px;min-height:48px;border:1px solid rgba(124,58,237,.25);border-radius:12px;background:#faf9ff;color:inherit;text-align:center;direction:ltr;font:inherit;font-size:1.5rem;font-variant-numeric:tabular-nums}
+.time-picker-parts>span{font-size:1.5rem;line-height:48px}
+.time-picker-parts input[aria-invalid="true"]{border-color:#dc2626}
+.time-picker-caption{font-size:.78rem;color:#6b7280;margin:10px 0 6px}
+.time-picker-hours,.time-picker-minutes{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
+.time-picker-minutes{grid-template-columns:repeat(4,minmax(0,1fr))}
+.time-picker button[aria-pressed="true"],.time-picker .time-picker-apply{background:var(--primary,#7c3aed);color:#fff;border-color:transparent;font-weight:700}
+.time-picker-shortcuts{display:flex;gap:8px;margin-top:14px}
+.time-picker-shortcuts button{flex:1;background:transparent;font-size:.86rem}
+.time-picker .time-picker-apply{width:100%;margin-top:8px;border-radius:12px}
+.time-picker .time-picker-apply:hover{filter:brightness(1.08)}
+.time-picker button:disabled{cursor:not-allowed;opacity:.5}
+html[data-bs-theme="dark"] .time-picker{background:#1e293b;color:#e5e7eb;border-color:#475569;box-shadow:0 16px 52px rgba(0,0,0,.45)}
+html[data-bs-theme="dark"] .time-picker button{background:#293449;border-color:#475569}
+html[data-bs-theme="dark"] .time-picker button:hover{background:#374151}
+html[data-bs-theme="dark"] .time-picker-parts input{background:#0f172a;color:#e5e7eb;border-color:#475569}
+html[data-bs-theme="dark"] .time-picker-caption,html[data-bs-theme="dark"] .time-picker-heading small,html[data-bs-theme="dark"] .time-picker-parts label,html[data-bs-theme="dark"] .time-hint{color:#aebacc}
+html[data-bs-theme="dark"] .time-picker button[aria-pressed="true"],html[data-bs-theme="dark"] .time-picker .time-picker-apply{background:var(--primary,#7c3aed);border-color:transparent;color:#fff}
+html[data-bs-theme="dark"] .time-picker-parts input[aria-invalid="true"]{border-color:#fca5a5}
+html[data-bs-theme="dark"] .time-input-error,html[data-bs-theme="dark"] .time-picker-error{color:#fca5a5}
+@media(max-width:380px){.time-picker{padding:12px}.time-picker-hours,.time-picker-minutes{gap:3px}.time-input-group .time-toggle{padding-inline:9px}}

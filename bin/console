@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 <?php
 require __DIR__ . '/../app/bootstrap.php';
-use App\Core\DB; use App\Services\FollowUpService; use App\Services\BackupService;
+use App\Core\DB; use App\Services\FollowUpService; use App\Services\BackupService; use App\Services\RestoreCheckService;
 $cmd = $argv[1] ?? 'help';
 try {
     if ($cmd === 'migrate') {
@@ -28,9 +28,14 @@ try {
         $n = FollowUpService::generateDueFromLastSessions();
         $low = DB::select('SELECT * FROM inventory_items WHERE quantity <= minimum_quantity AND status="active"');
         echo "Follow-ups generated: $n; Low stock items: ".count($low)."\n";
+    } elseif ($cmd === 'backup:check') {
+        if (count($argv) > 2) throw new InvalidArgumentException('این دستور فایل SQL را وارد یا بررسی نمی‌کند؛ آن را بدون آرگومان روی دیتابیس آزمایشیِ بازیابی‌شده اجرا کنید.');
+        $report = RestoreCheckService::inspect();
+        echo RestoreCheckService::formatReport($report);
+        exit($report['ok'] ? 0 : 2);
     } elseif ($cmd === 'backup:create') {
         echo BackupService::create() . "\n";
     } else {
-        echo "Commands: install, migrate, seed, user:password [email] [password], schedule:run, backup:create\n";
+        echo "Commands: install, migrate, seed, user:password [email] [password], schedule:run, backup:create, backup:check\n";
     }
 } catch (Throwable $e) { fwrite(STDERR, $e->getMessage()."\n"); exit(1); }

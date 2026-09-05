@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/../app/bootstrap.php';
 
-use App\Core\Auth; use App\Core\DB; use App\Core\Security; use App\Support\View; use App\Support\Jalali; use App\Services\Audit; use App\Services\FollowUpService; use App\Services\SalaryService; use App\Services\RetentionService; use App\Services\BackupService;
+use App\Core\Auth; use App\Core\DB; use App\Core\Security; use App\Support\View; use App\Support\Jalali; use App\Support\DateRange; use App\Support\ClockTime; use App\Support\SearchQuery; use App\Support\BirthDateRange; use App\Services\Audit; use App\Services\FollowUpService; use App\Services\SalaryService; use App\Services\RetentionService; use App\Services\BackupService;
 
 Security::verifyCsrf();
 $modules = require base_path('config/modules.php');
@@ -34,7 +34,7 @@ function display_value(string $name, array $f, mixed $value): string {
     if ($value === null || $value === '') return '<span class="text-muted">—</span>';
     $type = (string)($f[1] ?? 'text');
     if ($type === 'date') return e(Jalali::toJalali((string)$value));
-    if ($type === 'time') return e(Jalali::fa(substr((string)$value, 0, 5)));
+    if ($type === 'time') return '<span class="date-time">' . e(ClockTime::display((string)$value)) . '</span>';
     if ($type === 'select') { $opts = is_array($f[2] ?? null) ? $f[2] : []; $v = (string)$value; return e((string)($opts[$v] ?? t($v, $v))); }
     if (in_array($type, ['customer', 'therapist', 'service', 'appointment'], true)) return e(rel_label($type, (int)$value));
     if ($type === 'services_multi') {
@@ -53,18 +53,56 @@ function display_value(string $name, array $f, mixed $value): string {
 
 /** Render a table cell for module list pages. */
 function cell_value(string $column, mixed $v): string {
+    if ($column === 'birth_date') {
+        $date = Jalali::toJalali($v === null ? null : (string)$v);
+        return $date !== '' ? '<span class="date-time">' . e($date) . '</span>' : '<span class="text-muted">—</span>';
+    }
     $v = $v ?? '';
     if ($v === '') return '';
     $c = $column;
-    if (str_contains($c, 'date') || str_contains($c, 'visit') || str_ends_with($c, '_at')) return e(Jalali::toJalali((string)$v));
-    if (str_ends_with($c, '_time')) return e(Jalali::fa(substr((string)$v, 0, 5)));
+    if (str_ends_with($c, '_at')) return '<span class="date-time">' . e(Jalali::dateTime((string)$v)) . '</span>';
+    if (str_ends_with($c, '_date') || in_array($c, ['first_visit', 'last_visit', 'period_start', 'period_end'], true)) return e(Jalali::toJalali((string)$v));
+    if (str_ends_with($c, '_time')) return '<span class="date-time">' . e(ClockTime::display((string)$v)) . '</span>';
     if (str_contains($c, 'percentage')) return e(Jalali::fa($v)) . '٪';
     if (str_contains($c, 'amount') || str_contains($c, 'price') || str_contains($c, 'spent') || str_contains($c, 'salary') || str_contains($c, 'commission')) return money($v);
     if (str_contains($c, 'status') || $c === 'segment') return status_badge((string)$v);
     return e((string)$v);
 }
-function normalize_post(array $fields): array { $data=[]; foreach($fields as $name=>$f){ if(!array_key_exists($name,$_POST)) continue; $type=$f[1]; $val=$_POST[$name]; if($type==='date') $val=Jalali::toGregorian((string)$val); elseif($type==='number') $val=(Jalali::en((string)$val)==='' ? 0 : Jalali::en((string)$val)); elseif($type==='services_multi') $val=json_encode($val ?: [], JSON_UNESCAPED_UNICODE); elseif(is_string($val)) $val=Security::cleanString(Jalali::en($val)); $data[$name]=$val; } return $data; }
-function validate_required(array $fields, array $data): array { $err=[]; foreach($fields as $n=>$f){ if(in_array('required',$f,true) && (($data[$n]??'')==='' || ($data[$n]??null)===null)) $err[]=$f[0].' الزامی است.'; } return $err; }
+function normalize_post(array $fields): array {
+    $data = [];
+    foreach ($fields as $name => $f) {
+        if (!array_key_exists($name, $_POST)) continue;
+        $type = $f[1];
+        $val = $_POST[$name];
+        if ($type === 'date') $val = is_string($val) ? Jalali::toGregorian($val) : null;
+        elseif ($type === 'time') $val = is_string($val) ? ClockTime::normalize($val) : null;
+        elseif ($type === 'number') $val = Jalali::en((string)$val) === '' ? 0 : Jalali::en((string)$val);
+        elseif ($type === 'services_multi') $val = json_encode($val ?: [], JSON_UNESCAPED_UNICODE);
+        elseif (is_string($val)) $val = Security::cleanString(Jalali::en($val));
+        $data[$name] = $val;
+    }
+    return $data;
+}
+
+function validate_fields(array $fields, array $data): array {
+    $errors = [];
+    foreach ($fields as $name => $f) {
+        // Optional dates and clock times must also be valid when supplied; never silently save NULL.
+        $raw = $_POST[$name] ?? '';
+        if ($f[1] === 'date' && (!is_string($raw) || trim($raw) !== '') && ($data[$name] ?? null) === null) {
+            $errors[] = $f[0] . ' باید یک تاریخ شمسی معتبر به صورت سال/ماه/روز باشد.';
+            continue;
+        }
+        if ($f[1] === 'time' && (!is_string($raw) || !ClockTime::isEmpty($raw)) && ($data[$name] ?? null) === null) {
+            $errors[] = $f[0] . ' باید ساعت معتبر ۲۴ساعته باشد؛ مثلاً ۹:۳۰ یا ۹۳۰.';
+            continue;
+        }
+        if (in_array('required', $f, true) && (($data[$name] ?? '') === '' || ($data[$name] ?? null) === null)) {
+            $errors[] = $f[0] . ' الزامی است.';
+        }
+    }
+    return $errors;
+}
 
 /**
  * Render a single form field based on its definition in config/modules.php.
@@ -78,7 +116,8 @@ function input_html(string $name, array $f, mixed $value): string {
     $type = (string)($f[1] ?? 'text');
     $required = in_array('required', $f, true);
     $req = $required ? ' required' : '';
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && array_key_exists($name, $_POST)) $value = $_POST[$name];
+    $submitted = $_SERVER['REQUEST_METHOD'] === 'POST' && array_key_exists($name, $_POST);
+    if ($submitted) $value = $_POST[$name];
     $id = 'f_' . $name;
     $h = '<label class="form-label" for="' . e($id) . '">' . e($label) . ($required ? ' <span class="text-danger">*</span>' : '') . '</label>';
     if ($type === 'textarea') {
@@ -100,13 +139,12 @@ function input_html(string $name, array $f, mixed $value): string {
         foreach (options('service') as $o) $h .= '<option value="' . (int)$o['id'] . '"' . (in_array((int)$o['id'], $selected, true) ? ' selected' : '') . '>' . e((string)$o['label']) . '</option>';
         $h .= '</select><div class="form-text">برای انتخاب چند خدمت، کلید Ctrl را نگه دارید.</div>';
     } elseif ($type === 'date') {
-        $v = (string)($value ?? '');
-        if (preg_match('/^\d{4}-\d{2}-\d{2}/', $v)) $v = Jalali::toJalali($v); // raw DB value (Gregorian) → show as Jalali
-        $h .= '<div class="input-group"><span class="input-group-text"><i class="bi bi-calendar3"></i></span>'
-            . '<input id="' . e($id) . '" type="text" name="' . e($name) . '" value="' . e($v) . '" class="form-control" data-jdp placeholder="1404/01/01" autocomplete="off" inputmode="numeric"' . $req . '></div>';
+        $v = is_string($value) ? $value : '';
+        // Only storage values are Gregorian. A submitted 1405-01-01 is Jalali.
+        if (!$submitted) $v = Jalali::toJalali($v);
+        $h .= View::dateInput($name, $v, $required, $id);
     } elseif ($type === 'time') {
-        $v = substr((string)($value ?? ''), 0, 5); // DB TIME returns HH:MM:SS — time input needs HH:MM
-        $h .= '<input id="' . e($id) . '" type="time" name="' . e($name) . '" value="' . e($v) . '" class="form-control"' . $req . '>';
+        $h .= View::timeInput($name, is_string($value) ? $value : '', $required, $id, $label);
     } elseif ($type === 'number') {
         $v = (string)($value ?? '');
         if ($v !== '' && is_numeric($v)) { $f2 = (float)$v; $v = fmod($f2, 1.0) === 0.0 ? (string)(int)$f2 : (string)$f2; }
@@ -122,25 +160,135 @@ function options(string $type): array { return match($type){
  'customer'=>DB::select("SELECT id, CONCAT(first_name,' ',last_name,' - ',mobile) label FROM customers WHERE deleted_at IS NULL ORDER BY id DESC LIMIT 500"),
  'therapist'=>DB::select("SELECT id, CONCAT(name,' (',code,')') label FROM therapists WHERE status='active' ORDER BY name"),
  'service'=>DB::select("SELECT id, name label FROM services WHERE status='active' ORDER BY name"),
- 'appointment'=>array_map(fn($r)=>['id'=>$r['id'],'label'=>'#'.Jalali::fa((int)$r['id']).' — '.Jalali::toJalali((string)$r['d']).' '.Jalali::fa(substr((string)$r['s'],0,5))], DB::select("SELECT id, appointment_date d, start_time s FROM appointments WHERE deleted_at IS NULL ORDER BY appointment_date DESC, start_time DESC LIMIT 500")),
+ 'appointment'=>array_map(fn($r)=>['id'=>$r['id'],'label'=>'#'.Jalali::fa((int)$r['id']).' — '.Jalali::toJalali((string)$r['d']).' '.ClockTime::display((string)$r['s'])], DB::select("SELECT id, appointment_date d, start_time s FROM appointments WHERE deleted_at IS NULL ORDER BY appointment_date DESC, start_time DESC LIMIT 500")),
  default=>[]}; }
 function can_module(string $module, string $action='view'): void { 
     global $modules; 
     Auth::requireCan(($modules[$module]['perm'] ?? $module) . '.' . ($action === 'view' ? 'view' : 'manage')); 
 }
-function list_sql(string $module, array $def, string $where, array $params): array { $table=$def['table']; $select="$table.*"; $join=''; if(in_array($module,['appointments','sessions'],true)){ $select.=" , CONCAT(c.first_name,' ',c.last_name) customer_name, t.name therapist_name, s.name service_name"; $join=" LEFT JOIN customers c ON c.id=$table.customer_id LEFT JOIN therapists t ON t.id=$table.therapist_id LEFT JOIN services s ON s.id=$table.service_id"; } if($module==='packages'){ $select.=" , CONCAT(c.first_name,' ',c.last_name) customer_name"; $join=" LEFT JOIN customers c ON c.id=$table.customer_id"; } if($module==='customers'){ $select.=" , CONCAT(first_name,' ',last_name) full_name, (SELECT MAX(massage_date) FROM massage_sessions ms WHERE ms.customer_id=customers.id AND status='completed') last_visit, (SELECT COALESCE(SUM(final_amount),0) FROM massage_sessions ms WHERE ms.customer_id=customers.id AND status='completed') total_spent"; }
- $sql="SELECT $select FROM $table $join WHERE $where ORDER BY $table.id DESC"; return [$sql,$params]; }
-function render_module_list(string $module): string { global $modules; $def=$modules[$module]; can_module($module); $table=$def['table']; $q=Security::cleanString($_GET['q'] ?? null); $page=max(1,(int)($_GET['page']??1)); $per=20; $where="$table.deleted_at IS NULL"; $params=[]; if($q){$ors=[]; foreach($def['search'] as $c){$ors[]="$table.$c LIKE ?"; $params[]="%$q%";} $where.=' AND ('.implode(' OR ',$ors).')';}
- [$sql,$params]=list_sql($module,$def,$where,$params); $total=(int)DB::value("SELECT COUNT(*) FROM $table WHERE $where", $params); $rows=DB::select($sql." LIMIT $per OFFSET ".(($page-1)*$per), $params); ob_start(); ?>
-<div class="card p-3"><div class="d-flex flex-wrap gap-2 justify-content-between mb-3"><form class="d-flex gap-2"><input type="hidden" name="r" value="<?=e($module)?>"><input name="q" value="<?=e($q)?>" class="form-control" placeholder="جستجو..."><button class="btn btn-soft">جستجو</button></form><?php if(Auth::can($def['perm'].'.manage')): ?><a class="btn btn-primary" href="<?=url($module.'.create')?>"><i class="bi bi-plus-lg"></i> افزودن</a><?php endif;?></div><div class="table-responsive"><table class="table align-middle"><thead><tr><?php foreach($def['columns'] as $c=>$l): ?><th><?=e($l)?></th><?php endforeach;?><th>عملیات</th></tr></thead><tbody><?php foreach($rows as $row): ?><tr><?php foreach($def['columns'] as $c=>$l): ?><td><?=cell_value($c, $row[$c] ?? '')?></td><?php endforeach; ?><td class="text-nowrap"><a class="btn btn-sm btn-soft" href="<?=url($module.'.show',['id'=>$row['id']])?>">نمایش</a><?php if(Auth::can($def['perm'].'.manage')): ?> <a class="btn btn-sm btn-outline-primary" href="<?=url($module.'.edit',['id'=>$row['id']])?>">ویرایش</a> <form method="post" action="<?=url($module.'.delete',['id'=>$row['id']])?>" class="d-inline" onsubmit="return confirm('حذف شود؟')"><?=View::csrf()?><button class="btn btn-sm btn-outline-danger">حذف</button></form><?php endif;?></td></tr><?php endforeach; if(!$rows): ?><tr><td colspan="20" class="empty">رکوردی یافت نشد.</td></tr><?php endif;?></tbody></table></div><div class="small text-muted">تعداد: <?=Jalali::fa($total)?></div><?php echo render_pager($module,$page,max(1,(int)ceil($total/$per)),$q); ?></div><?php return (string)ob_get_clean(); }
-function render_pager(string $module, int $page, int $pages, ?string $q): string { if($pages<=1) return ''; $mk=function(int $p) use ($module,$q){ $params=[]; if($q!==null&&$q!=='')$params['q']=$q; if($p>1)$params['page']=$p; return url($module,$params); }; $h='<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center mb-0">'; $h.='<li class="page-item '.($page<=1?'disabled':'').'"><a class="page-link" href="'.e($mk($page-1)).'">قبلی</a></li>'; $start=max(1,$page-2); $end=min($pages,$page+2); for($p=$start;$p<=$end;$p++){ $h.='<li class="page-item '.($p===$page?'active':'').'"><a class="page-link" href="'.e($mk($p)).'">'.Jalali::fa($p).'</a></li>'; } $h.='<li class="page-item '.($page>=$pages?'disabled':'').'"><a class="page-link" href="'.e($mk($page+1)).'">بعدی</a></li></ul></nav>'; return $h; }
+/** Build data/count queries from exactly the same joins, scope, and search predicate. */
+function list_sql(string $module, array $def, SearchQuery $search, ?BirthDateRange $birthDates = null): array {
+    $table = $def['table'];
+    $select = "$table.*";
+    $join = '';
+    $fields = array_map(static fn($column) => "$table.$column", $def['search']);
+    if (in_array($module, ['appointments', 'sessions', 'packages'], true)) {
+        $customerName = "CONCAT_WS(' ', c.first_name, c.last_name)";
+        $select .= ", $customerName customer_name";
+        $join .= " LEFT JOIN customers c ON c.id=$table.customer_id";
+        $fields = array_merge($fields, [$customerName, 'c.mobile', 'c.customer_code']);
+    }
+    if (in_array($module, ['appointments', 'sessions'], true)) {
+        $select .= ', t.name therapist_name, s.name service_name';
+        $join .= " LEFT JOIN therapists t ON t.id=$table.therapist_id LEFT JOIN services s ON s.id=$table.service_id";
+        $fields = array_merge($fields, ['t.name', 't.code', 's.name']);
+    }
+    if ($module === 'customers') {
+        $fullName = "CONCAT_WS(' ', customers.first_name, customers.last_name)";
+        $select .= ", $fullName full_name, (SELECT MAX(massage_date) FROM massage_sessions ms WHERE ms.customer_id=customers.id AND status='completed') last_visit, (SELECT COALESCE(SUM(final_amount),0) FROM massage_sessions ms WHERE ms.customer_id=customers.id AND status='completed') total_spent";
+        $fields = array_values(array_diff($fields, ['customers.first_name', 'customers.last_name']));
+        array_unshift($fields, $fullName);
+    }
+    [$predicate, $params] = $search->predicate($fields);
+    $where = "$table.deleted_at IS NULL" . ($predicate !== '' ? " AND $predicate" : '');
+    if ($module === 'customers' && $birthDates !== null) {
+        [$birthPredicate, $birthParams] = $birthDates->predicate();
+        if ($birthPredicate !== '') $where .= " AND $birthPredicate";
+        $params = array_merge($params, $birthParams);
+    }
+    $from = "FROM $table$join WHERE $where";
+    return ["SELECT $select $from ORDER BY $table.id DESC", $params, "SELECT COUNT(*) $from"];
+}
+
+function render_module_list(string $module): string {
+    global $modules;
+    $def = $modules[$module];
+    can_module($module);
+    $search = SearchQuery::fromInput($_GET['q'] ?? null);
+    $q = $search->value;
+    $birthDates = $module === 'customers' ? new BirthDateRange($_GET) : null;
+    $errors = array_merge($search->error === null ? [] : [$search->error], $birthDates?->errors ?? []);
+    $hasBirthFilter = $birthDates?->hasInput() ?? false;
+    $pageValue = $_GET['page'] ?? '1';
+    $page = is_scalar($pageValue) ? max(1, (int)Jalali::en((string)$pageValue)) : 1;
+    $per = 20;
+    $rows = [];
+    $total = 0;
+    $pages = 1;
+    if (!$errors) {
+        [$sql, $params, $countSql] = list_sql($module, $def, $search, $birthDates);
+        $total = (int)DB::value($countSql, $params);
+        $pages = max(1, (int)ceil($total / $per));
+        // A stale page number must not make an otherwise successful search empty.
+        $page = min($page, $pages);
+        $rows = DB::select($sql . " LIMIT $per OFFSET " . (($page - 1) * $per), $params);
+    } else {
+        http_response_code(400);
+        $page = 1;
+    }
+    $hint = $module === 'customers' ? 'نام کامل، موبایل یا کد مشتری' : 'جستجو...';
+    ob_start(); ?>
+<?php if ($errors): ?><div class="alert alert-danger" role="alert"><?=implode('<br>', array_map('e', $errors))?></div><?php endif; ?>
+<div class="card p-3">
+  <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
+    <form method="get" class="<?=$birthDates !== null ? 'customer-filter-form' : 'd-flex flex-wrap gap-2'?>" role="search">
+      <input type="hidden" name="r" value="<?=e($module)?>">
+      <?php if ($birthDates !== null): ?><div class="customer-search-field"><label class="form-label" for="list-search-query">جستجوی مشتری</label><?php endif; ?>
+      <input id="list-search-query" type="search" name="q" value="<?=e($q)?>" class="form-control <?=$birthDates === null ? 'w-auto' : ''?>" dir="auto" maxlength="<?=SearchQuery::MAX_LENGTH?>" placeholder="<?=e($hint)?>" aria-label="<?=e('جستجو در ' . $def['title'])?>">
+      <?php if ($birthDates !== null): ?></div>
+      <fieldset class="customer-birth-filter" aria-describedby="birth-filter-help">
+        <legend>بازهٔ تاریخ تولد (شمسی)</legend>
+        <div class="birth-filter-inputs">
+          <div><label class="form-label" for="f_birth_from">از تاریخ تولد</label><?=View::dateInput('birth_from', $birthDates->values['birth_from'])?></div>
+          <div><label class="form-label" for="f_birth_to">تا تاریخ تولد</label><?=View::dateInput('birth_to', $birthDates->values['birth_to'])?></div>
+        </div>
+        <div id="birth-filter-help" class="form-text text-muted">سال، ماه و روز تولد را وارد کنید. هر سمت خالی باشد، آن سمت محدود نمی‌شود؛ هر دو روزِ ابتدا و انتها شامل نتایج‌اند.</div>
+      </fieldset>
+      <div class="customer-filter-actions">
+      <?php endif; ?>
+      <button class="btn btn-soft">جستجو</button>
+      <?php if ($q !== '' || $errors || $hasBirthFilter): ?><a class="btn btn-soft" href="<?=e(url($module))?>"><?=$hasBirthFilter ? 'پاک‌کردن فیلترها' : 'پاک‌کردن جستجو'?></a><?php endif; ?>
+      <?php if ($birthDates !== null): ?></div><?php endif; ?>
+    </form>
+    <?php if(Auth::can($def['perm'].'.manage')): ?><a class="btn btn-primary" href="<?=url($module.'.create')?>"><i class="bi bi-plus-lg"></i> افزودن</a><?php endif; ?>
+  </div>
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><?php foreach($def['columns'] as $c=>$l): ?><th><?=e($l)?></th><?php endforeach;?><th>عملیات</th></tr></thead><tbody>
+    <?php foreach($rows as $row): ?><tr><?php foreach($def['columns'] as $c=>$l): ?><td><?=cell_value($c, $row[$c] ?? '')?></td><?php endforeach; ?><td class="text-nowrap"><a class="btn btn-sm btn-soft" href="<?=url($module.'.show',['id'=>$row['id']])?>">نمایش</a><?php if(Auth::can($def['perm'].'.manage')): ?> <a class="btn btn-sm btn-outline-primary" href="<?=url($module.'.edit',['id'=>$row['id']])?>">ویرایش</a> <form method="post" action="<?=url($module.'.delete',['id'=>$row['id']])?>" class="d-inline" onsubmit="return confirm('حذف شود؟')"><?=View::csrf()?><button class="btn btn-sm btn-outline-danger">حذف</button></form><?php endif;?></td></tr><?php endforeach; ?>
+    <?php if(!$rows): ?><tr><td colspan="20" class="empty">رکوردی یافت نشد.</td></tr><?php endif;?>
+  </tbody></table></div>
+  <div class="small text-muted">تعداد: <?=Jalali::fa($total)?></div>
+  <?=render_pager($module, $page, $pages, $q, $birthDates?->queryParameters() ?? [])?>
+</div>
+<?php return (string)ob_get_clean(); }
+
+function render_pager(string $module, int $page, int $pages, ?string $q, array $filters = []): string { if($pages<=1) return ''; $mk=function(int $p) use ($module,$q,$filters){ $params=$filters; if($q!==null&&$q!=='')$params['q']=$q; if($p>1)$params['page']=$p; return url($module,$params); }; $h='<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center mb-0">'; $h.='<li class="page-item '.($page<=1?'disabled':'').'"><a class="page-link" href="'.e($mk($page-1)).'">قبلی</a></li>'; $start=max(1,$page-2); $end=min($pages,$page+2); for($p=$start;$p<=$end;$p++){ $h.='<li class="page-item '.($p===$page?'active':'').'"><a class="page-link" href="'.e($mk($p)).'">'.Jalali::fa($p).'</a></li>'; } $h.='<li class="page-item '.($page>=$pages?'disabled':'').'"><a class="page-link" href="'.e($mk($page+1)).'">بعدی</a></li></ul></nav>'; return $h; }
 function module_form(string $module, ?int $id=null, array $errors=[]): string { global $modules; $def=$modules[$module]; $row=$id?DB::row('SELECT * FROM '.$def['table'].' WHERE id=?',[$id]):[]; ob_start(); if($errors) echo '<div class="alert alert-danger">'.implode('<br>',array_map('e',$errors)).'</div>'; ?><form method="post" class="card p-4"><?=View::csrf()?><div class="row g-3"><?php foreach($def['fields'] as $n=>$f): ?><div class="col-md-6 <?=($f[1]==='textarea'||$f[1]==='services_multi')?'col-lg-12':''?>"><?=input_html($n,$f,$row[$n] ?? null)?></div><?php endforeach;?></div><div class="mt-4 d-flex gap-2"><button class="btn btn-primary">ذخیره</button><a class="btn btn-soft" href="<?=url($module)?>">انصراف</a></div></form><?php return (string)ob_get_clean(); }
-function handle_module(string $module, string $action): void { global $modules; $def=$modules[$module]; $table=$def['table']; if($action==='index') echo View::render($def['title'], render_module_list($module)); elseif($action==='create'){ can_module($module,'manage'); if($_SERVER['REQUEST_METHOD']==='POST'){ $data=normalize_post($def['fields']); $errors=validate_required($def['fields'],$data); if($module==='appointments') $errors=array_merge($errors, check_double_booking($data)); if(!$errors){ if($module==='customers') {$data['customer_code']='C'.date('ymd').random_int(100,999); $data['registration_date']=date('Y-m-d');} $data['created_by']=Auth::id(); $data['created_at']=date('Y-m-d H:i:s'); $id=DB::insert($table,$data); after_save($module,$id,$data,true); Audit::log($module.'.create',$table,$id); toast('رکورد با موفقیت ایجاد شد.'); redirect($module.'.show',['id'=>$id]); } echo View::render('افزودن '.$def['title'], module_form($module,null,$errors)); } else echo View::render('افزودن '.$def['title'], module_form($module)); } elseif($action==='edit'){ can_module($module,'manage'); $id=(int)($_GET['id']??0); if(!record_exists($table,$id)){ toast('رکورد مورد نظر یافت نشد یا حذف شده است.'); redirect($module); } if($_SERVER['REQUEST_METHOD']==='POST'){ $data=normalize_post($def['fields']); $errors=validate_required($def['fields'],$data); if($module==='appointments') $errors=array_merge($errors, check_double_booking($data,$id)); if(!$errors){ $data['updated_at']=date('Y-m-d H:i:s'); DB::update($table,$data,'id=:id',['id'=>$id]); after_save($module,$id,$data,false); Audit::log($module.'.update',$table,$id); toast('رکورد بروزرسانی شد.'); redirect($module.'.show',['id'=>$id]); } echo View::render('ویرایش '.$def['title'], module_form($module,$id,$errors)); } else echo View::render('ویرایش '.$def['title'], module_form($module,$id)); } elseif($action==='delete'){ can_module($module,'manage'); $delId=(int)($_GET['id']??0); if($delId>0){ DB::exec("UPDATE $table SET deleted_at=NOW() WHERE id=?",[$delId]); Audit::log($module.'.delete',$table,$delId); toast('رکورد حذف شد.'); } redirect($module); } elseif($action==='show'){ can_module($module); echo View::render($def['title'], show_record($module,(int)($_GET['id']??0))); } }
+function handle_module(string $module, string $action): void { global $modules; $def=$modules[$module]; $table=$def['table']; if($action==='index') echo View::render($def['title'], render_module_list($module)); elseif($action==='create'){ can_module($module,'manage'); if($_SERVER['REQUEST_METHOD']==='POST'){ $data=normalize_post($def['fields']); $errors=validate_fields($def['fields'],$data); if($module==='appointments') $errors=array_merge($errors, check_double_booking($data)); if(!$errors){ if($module==='customers') {$data['customer_code']='C'.date('ymd').random_int(100,999); $data['registration_date']=date('Y-m-d');} $data['created_by']=Auth::id(); $data['created_at']=date('Y-m-d H:i:s'); $id=DB::insert($table,$data); after_save($module,$id,$data,true); Audit::log($module.'.create',$table,$id); toast('رکورد با موفقیت ایجاد شد.'); redirect($module.'.show',['id'=>$id]); } echo View::render('افزودن '.$def['title'], module_form($module,null,$errors)); } else echo View::render('افزودن '.$def['title'], module_form($module)); } elseif($action==='edit'){ can_module($module,'manage'); $id=(int)($_GET['id']??0); if(!record_exists($table,$id)){ toast('رکورد مورد نظر یافت نشد یا حذف شده است.'); redirect($module); } if($_SERVER['REQUEST_METHOD']==='POST'){ $data=normalize_post($def['fields']); $errors=validate_fields($def['fields'],$data); if($module==='appointments') $errors=array_merge($errors, check_double_booking($data,$id)); if(!$errors){ $data['updated_at']=date('Y-m-d H:i:s'); DB::update($table,$data,'id=:id',['id'=>$id]); after_save($module,$id,$data,false); Audit::log($module.'.update',$table,$id); toast('رکورد بروزرسانی شد.'); redirect($module.'.show',['id'=>$id]); } echo View::render('ویرایش '.$def['title'], module_form($module,$id,$errors)); } else echo View::render('ویرایش '.$def['title'], module_form($module,$id)); } elseif($action==='delete'){ can_module($module,'manage'); $delId=(int)($_GET['id']??0); if($delId>0){ DB::exec("UPDATE $table SET deleted_at=NOW() WHERE id=?",[$delId]); Audit::log($module.'.delete',$table,$delId); toast('رکورد حذف شد.'); } redirect($module); } elseif($action==='show'){ can_module($module); echo View::render($def['title'], show_record($module,(int)($_GET['id']??0))); } }
 function record_exists(string $table, int $id): bool { return $id>0 && (bool)DB::value("SELECT id FROM `$table` WHERE id=? AND deleted_at IS NULL LIMIT 1",[$id]); }
 function check_double_booking(array $data, int $ignoreId=0): array { if(empty($data['therapist_id'])||empty($data['appointment_date'])||empty($data['start_time'])||empty($data['end_time'])) return []; $row=DB::row("SELECT id FROM appointments WHERE therapist_id=? AND appointment_date=? AND status NOT IN ('cancelled','no_show') AND id<>? AND (start_time < ? AND end_time > ?) LIMIT 1",[$data['therapist_id'],$data['appointment_date'],$ignoreId,$data['end_time'],$data['start_time']]); return $row?['این درمانگر در بازه زمانی انتخاب‌شده نوبت دیگری دارد.']:[]; }
 function after_save(string $module, int $id, array $data, bool $new): void { if($module==='sessions' && (($data['status']??'completed')==='completed')){ FollowUpService::createForSession($id); DB::insert('customer_timeline',['customer_id'=>$data['customer_id'],'type'=>'session','title'=>'ثبت جلسه ماساژ','body'=>'مبلغ: '.($data['final_amount']??0),'entity'=>'massage_sessions','entity_id'=>$id,'created_at'=>date('Y-m-d H:i:s')]); } if($module==='customers' && $new) DB::insert('customer_timeline',['customer_id'=>$id,'type'=>'registration','title'=>'ثبت‌نام مشتری','body'=>'پرونده مشتری ایجاد شد','created_at'=>date('Y-m-d H:i:s')]); }
 function show_record(string $module, int $id): string { global $modules; $def=$modules[$module]; $row=$id>0?DB::row('SELECT * FROM '.$def['table'].' WHERE id=? AND deleted_at IS NULL',[$id]):null; if(!$row) return '<div class="alert alert-warning">رکورد مورد نظر یافت نشد یا حذف شده است.</div>'; ob_start(); ?><div class="card p-4"><div class="d-flex justify-content-between align-items-center"><h3 class="m-0"><?=e($def['title'])?> #<?=Jalali::fa($id)?></h3><div class="d-flex gap-2"><a class="btn btn-soft" href="<?=url($module)?>">بازگشت به لیست</a><?php if(Auth::can($def['perm'].'.manage')): ?><a class="btn btn-outline-primary" href="<?=url($module.'.edit',['id'=>$id])?>">ویرایش</a><?php endif;?></div></div><div class="row g-3 mt-2"><?php foreach($def['fields'] as $n=>$f): ?><div class="col-md-6"><div class="meta"><span><?=e($f[0])?></span><b><?=display_value($n,$f,$row[$n]??'')?></b></div></div><?php endforeach;?></div></div><?php if($module==='customers') echo customer_profile_extra($id); return (string)ob_get_clean(); }
-function customer_profile_extra(int $id): string { $metrics=DB::row("SELECT COUNT(*) visits, MIN(massage_date) first_visit, MAX(massage_date) last_visit, COALESCE(SUM(final_amount),0) total, AVG(final_amount) avg_spend, AVG(satisfaction_score) avg_score FROM massage_sessions WHERE customer_id=? AND status='completed'",[$id]); $tl=DB::select('SELECT * FROM customer_timeline WHERE customer_id=? ORDER BY created_at DESC LIMIT 50',[$id]); ob_start(); ?><div class="row g-3 mt-1"><div class="col-md-3"><div class="stat"><span>تعداد مراجعات</span><b><?=Jalali::fa($metrics['visits']??0)?></b></div></div><div class="col-md-3"><div class="stat"><span>آخرین مراجعه</span><b><?=Jalali::toJalali($metrics['last_visit']??'')?></b></div></div><div class="col-md-3"><div class="stat"><span>کل خرید</span><b><?=money($metrics['total']??0)?></b></div></div><div class="col-md-3"><div class="stat"><span>رضایت میانگین</span><b><?=Jalali::fa(round((float)($metrics['avg_score']??0),1))?></b></div></div></div><div class="card p-4 mt-3"><h4>تایم‌لاین CRM</h4><div class="timeline"><?php foreach($tl as $i): ?><div><time><?=Jalali::toJalali($i['created_at'])?></time><b><?=e($i['title'])?></b><p><?=e($i['body'])?></p></div><?php endforeach; if(!$tl): ?><p class="empty">هنوز رویدادی ثبت نشده است.</p><?php endif;?></div></div><?php return (string)ob_get_clean(); }
+function customer_profile_extra(int $id): string {
+    $metrics = DB::row("SELECT COUNT(*) visits, MIN(massage_date) first_visit, MAX(massage_date) last_visit, COALESCE(SUM(final_amount),0) total, AVG(final_amount) avg_spend, AVG(satisfaction_score) avg_score FROM massage_sessions WHERE customer_id=? AND status='completed'", [$id]);
+    $timeline = DB::select('SELECT * FROM customer_timeline WHERE customer_id=? ORDER BY created_at DESC, id DESC LIMIT 50', [$id]);
+    ob_start(); ?>
+    <div class="row g-3 mt-1">
+      <div class="col-md-3"><div class="stat"><span>تعداد مراجعات</span><b><?=Jalali::fa($metrics['visits'] ?? 0)?></b></div></div>
+      <div class="col-md-3"><div class="stat"><span>آخرین مراجعه</span><b><?=Jalali::toJalali($metrics['last_visit'] ?? '')?></b></div></div>
+      <div class="col-md-3"><div class="stat"><span>کل خرید</span><b><?=money($metrics['total'] ?? 0)?></b></div></div>
+      <div class="col-md-3"><div class="stat"><span>رضایت میانگین</span><b><?=Jalali::fa(round((float)($metrics['avg_score'] ?? 0), 1))?></b></div></div>
+    </div>
+    <div class="card p-4 mt-3"><h4>تایم‌لاین CRM</h4><div class="timeline">
+      <?php foreach ($timeline as $event): ?>
+      <div>
+        <time class="date-time"><?=e(Jalali::dateTime($event['created_at']))?></time>
+        <b><?=e(Jalali::datesInText($event['title']))?></b>
+        <p><?=nl2br(e(Jalali::datesInText($event['body'])))?></p>
+      </div>
+      <?php endforeach; if (!$timeline): ?><p class="empty">هنوز رویدادی ثبت نشده است.</p><?php endif; ?>
+    </div></div>
+    <?php return (string)ob_get_clean();
+}
 
 if($route==='login'){
     if(Auth::user()) redirect('dashboard');
@@ -176,8 +324,8 @@ Auth::requireLogin();
 if(isset($modules[$route])) { handle_module($route,'index'); exit; }
 if(preg_match('/^([a-z_]+)\.(create|edit|delete|show)$/',$route,$m) && isset($modules[$m[1]])){ handle_module($m[1],$m[2]); exit; }
 
-if($route==='dashboard'){ Auth::requireCan('dashboard.view'); $today=date('Y-m-d');
- $stats=['appt'=>DB::value('SELECT COUNT(*) FROM appointments WHERE appointment_date=? AND deleted_at IS NULL',[$today]),'sessions'=>DB::value("SELECT COUNT(*) FROM massage_sessions WHERE massage_date=? AND status='completed' AND deleted_at IS NULL",[$today]),'revenue'=>DB::value("SELECT COALESCE(SUM(final_amount),0) FROM massage_sessions WHERE massage_date=? AND status='completed' AND deleted_at IS NULL",[$today]),'month'=>DB::value("SELECT COALESCE(SUM(final_amount),0) FROM massage_sessions WHERE massage_date>=DATE_FORMAT(CURDATE(),'%Y-%m-01') AND status='completed' AND deleted_at IS NULL"),'new'=>DB::value('SELECT COUNT(*) FROM customers WHERE registration_date=? AND deleted_at IS NULL',[$today]),'follow'=>DB::value("SELECT COUNT(*) FROM followups WHERE status IN ('pending','requested_later') AND due_date<=CURDATE() AND (deleted_at IS NULL OR deleted_at IS NULL)")];
+if($route==='dashboard'){ Auth::requireCan('dashboard.view'); $today=date('Y-m-d'); $monthStart=Jalali::startOfMonth($today);
+ $stats=['appt'=>DB::value('SELECT COUNT(*) FROM appointments WHERE appointment_date=? AND deleted_at IS NULL',[$today]),'sessions'=>DB::value("SELECT COUNT(*) FROM massage_sessions WHERE massage_date=? AND status='completed' AND deleted_at IS NULL",[$today]),'revenue'=>DB::value("SELECT COALESCE(SUM(final_amount),0) FROM massage_sessions WHERE massage_date=? AND status='completed' AND deleted_at IS NULL",[$today]),'month'=>DB::value("SELECT COALESCE(SUM(final_amount),0) FROM massage_sessions WHERE massage_date BETWEEN ? AND ? AND status='completed' AND deleted_at IS NULL",[$monthStart,$today]),'new'=>DB::value('SELECT COUNT(*) FROM customers WHERE registration_date=? AND deleted_at IS NULL',[$today]),'follow'=>DB::value("SELECT COUNT(*) FROM followups WHERE status IN ('pending','requested_later') AND due_date<=CURDATE() AND (deleted_at IS NULL OR deleted_at IS NULL)")];
  $top=DB::select("SELECT s.name, SUM(ms.final_amount) revenue FROM massage_sessions ms JOIN services s ON s.id=ms.service_id WHERE ms.status='completed' AND ms.deleted_at IS NULL GROUP BY s.id ORDER BY revenue DESC LIMIT 5");
  // --- Inventory low-stock alarm ---
  $lowStock = DB::select("SELECT * FROM inventory_items WHERE deleted_at IS NULL AND status='active' AND quantity < minimum_quantity ORDER BY (minimum_quantity - quantity) DESC LIMIT 100");
@@ -186,7 +334,7 @@ if($route==='dashboard'){ Auth::requireCan('dashboard.view'); $today=date('Y-m-d
 
  ob_start(); ?>
 <div class="row g-3">
-<?php foreach([['نوبت‌های امروز',$stats['appt'],'bi-calendar2-check',''],['جلسات امروز',$stats['sessions'],'bi-clipboard-heart',''],['درآمد امروز',money($stats['revenue']),'bi-cash',''],['درآمد ماه',money($stats['month']),'bi-graph-up',''],['مشتریان جدید',$stats['new'],'bi-person-plus',''],['پیگیری معوق/امروز',$stats['follow'],'bi-telephone', $stats['follow']>0?'text-danger':'']] as $s): ?>
+<?php foreach([['نوبت‌های امروز',$stats['appt'],'bi-calendar2-check',''],['جلسات امروز',$stats['sessions'],'bi-clipboard-heart',''],['درآمد امروز',money($stats['revenue']),'bi-cash',''],['درآمد ماه جاری شمسی',money($stats['month']),'bi-graph-up',''],['مشتریان جدید',$stats['new'],'bi-person-plus',''],['پیگیری معوق/امروز',$stats['follow'],'bi-telephone', $stats['follow']>0?'text-danger':'']] as $s): ?>
 <div class="col-md-4 col-xl-2"><div class="stat <?= $s[3] ? 'border border-danger border-2' : '' ?>"><i class="bi <?=$s[2]?>"></i><span><?=$s[0]?></span><b class="<?=$s[3]?>"><?=$s[1]?></b></div></div>
 <?php endforeach;?>
 </div>
@@ -236,7 +384,7 @@ if($route==='dashboard'){ Auth::requireCan('dashboard.view'); $today=date('Y-m-d
         <table class="table align-middle mb-0"><thead><tr><th>تاریخ سررسید</th><th>مشتری</th><th>موبایل</th><th>شرح</th></tr></thead>
         <tbody>
           <?php foreach($overdueFollow as $of): ?>
-          <tr><td class="text-danger"><?=Jalali::toJalali($of['due_date'])?></td><td><?=e($of['customer_name'])?></td><td dir="ltr"><?=e($of['mobile'])?></td><td><?=e($of['description'])?></td></tr>
+          <tr><td class="text-danger"><?=Jalali::toJalali($of['due_date'])?></td><td><?=e($of['customer_name'])?></td><td dir="ltr"><?=e($of['mobile'])?></td><td><?=e(Jalali::datesInText($of['description']))?></td></tr>
           <?php endforeach; ?>
         </tbody></table>
       </div>
@@ -380,7 +528,6 @@ if($route==='followups'){
               <td>
                 <?php if($isOverdue): ?><span class="badge text-bg-danger mb-1"><i class="bi bi-exclamation-triangle"></i> معوق</span><br><?php endif; ?>
                 <?=Jalali::toJalali($r['due_date'])?>
-                <div class="small text-muted"><?=e($r['due_date'])?></div>
               </td>
               <td><?php $p=$r['priority']??'normal'; $pm=['high'=>['danger','بالا'], 'normal'=>['info','عادی'], 'low'=>['secondary','پایین']]; $pp=$pm[$p]??$pm['normal']; echo '<span class="badge text-bg-'.$pp[0].'">'.e($pp[1]).'</span>';?></td>
               <td>
@@ -388,8 +535,8 @@ if($route==='followups'){
                 <div class="small text-muted"><?=e(t($r['customer_status']??'',$r['customer_status']??''))?></div>
               </td>
               <td dir="ltr"><a href="tel:<?=e($r['mobile'])?>" class="text-decoration-none"><?=e($r['mobile'])?></a></td>
-              <td><span class="text-wrap" style="max-width:200px;display:inline-block"><?=e($r['description']??'-')?></span></td>
-              <td><?php if(!empty($r['result'])): ?><span class="result-chip"><?=e($r['result'])?></span><?php else: ?><span class="text-muted small">—</span><?php endif;?><div class="small text-muted mt-1"><?php if(!empty($r['contacted_at'])) echo Jalali::toJalali($r['contacted_at']); ?></div></td>
+              <td><span class="text-wrap" style="max-width:200px;display:inline-block"><?=e(Jalali::datesInText($r['description']??'-'))?></span></td>
+              <td><?php if(!empty($r['result'])): ?><span class="result-chip"><?=e(Jalali::datesInText($r['result']))?></span><?php else: ?><span class="text-muted small">—</span><?php endif;?><div class="small text-muted mt-1 date-time"><?php if(!empty($r['contacted_at'])) echo Jalali::dateTime($r['contacted_at']); ?></div></td>
               <td>
                 <?php if(in_array($r['status'],['pending','requested_later'],true)):?>
                 <form method="post" class="followup-action-form"><?=View::csrf()?><input type="hidden" name="id" value="<?=$r['id']?>"><div class="d-flex flex-wrap gap-1 align-items-center">
@@ -419,9 +566,87 @@ if($route==='followups'){
     </div>
     <?php echo View::render('مرکز پیگیری', ob_get_clean()); exit; }
 if($route==='retention'){ Auth::requireCan('customers.view'); $rows=RetentionService::metrics(); ob_start(); ?><div class="card p-4"><h3>هوشمندی نگهداشت مشتری (RFM)</h3><table class="table"><tr><th>مشتری</th><th>آخرین مراجعه</th><th>تعداد</th><th>ارزش مالی</th><th>بخش</th><th>پیشنهاد</th></tr><?php foreach($rows as $r): ?><tr><td><?=e($r['first_name'].' '.$r['last_name'])?></td><td><?=Jalali::toJalali($r['last_visit'])?></td><td><?=Jalali::fa($r['visits'])?></td><td><?=money($r['monetary'])?></td><td><?=status_badge($r['segment'])?></td><td><?=e(($r['segment']==='at_risk'||$r['segment']==='lost')?'تماس فوری و پیشنهاد تخفیف بازگشت':'حفظ ارتباط و پیشنهاد رزرو بعدی')?></td></tr><?php endforeach;?></table></div><?php echo View::render('نگهداشت مشتری', ob_get_clean()); exit; }
-if($route==='finance' || $route==='reports'){ Auth::requireCan(($route==='finance'?'finance':'reports').'.view'); $from=Jalali::toGregorian($_GET['from']??date('Y-m-01')); $to=Jalali::toGregorian($_GET['to']??date('Y-m-d')); $rev=DB::row("SELECT COUNT(*) sessions, COALESCE(SUM(final_amount),0) revenue, COALESCE(SUM(discount),0) discounts FROM massage_sessions WHERE status='completed' AND massage_date BETWEEN ? AND ?",[$from,$to]); $exp=DB::value('SELECT COALESCE(SUM(amount),0) FROM expenses WHERE expense_date BETWEEN ? AND ? AND deleted_at IS NULL',[$from,$to]); ob_start(); ?><form class="card p-3 mb-3"><div class="row g-2 align-items-end"><input type="hidden" name="r" value="<?=e($route)?>"><div class="col-md-3"><label class="form-label">از تاریخ</label><div class="input-group"><span class="input-group-text"><i class="bi bi-calendar3"></i></span><input name="from" class="form-control" data-jdp value="<?=Jalali::toJalali($from)?>" placeholder="1404/01/01" autocomplete="off"></div></div><div class="col-md-3"><label class="form-label">تا تاریخ</label><div class="input-group"><span class="input-group-text"><i class="bi bi-calendar3"></i></span><input name="to" class="form-control" data-jdp value="<?=Jalali::toJalali($to)?>" placeholder="1404/12/29" autocomplete="off"></div></div><div class="col-md-3 d-flex gap-2"><button class="btn btn-primary"><i class="bi bi-bar-chart"></i> گزارش</button><a class="btn btn-soft" href="<?=url('export.csv',['from'=>$from,'to'=>$to])?>"><i class="bi bi-download"></i> خروجی CSV</a></div></div></form><div class="row g-3"><div class="col-md-3"><div class="stat"><span>درآمد</span><b><?=money($rev['revenue'])?></b></div></div><div class="col-md-3"><div class="stat"><span>هزینه</span><b><?=money($exp)?></b></div></div><div class="col-md-3"><div class="stat"><span>سود خالص</span><b><?=money($rev['revenue']-$exp)?></b></div></div><div class="col-md-3"><div class="stat"><span>تعداد جلسات</span><b><?=Jalali::fa($rev['sessions'])?></b></div></div></div><div class="card p-4 mt-3"><h4>درآمد بر اساس درمانگر/خدمت/منبع معرفی</h4><p>این بخش آماده چاپ و خروجی‌گیری است و داده‌ها از رکوردهای واقعی محاسبه می‌شود.</p></div><?php echo View::render($route==='finance'?'مالی':'گزارش‌ها', ob_get_clean()); exit; }
-if($route==='export.csv'){ Auth::requireCan('reports.view'); header('Content-Type:text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename=report.csv'); echo "date,customer,service,therapist,amount\n"; foreach(DB::select("SELECT ms.massage_date, CONCAT(c.first_name,' ',c.last_name) c, s.name s, t.name t, ms.final_amount FROM massage_sessions ms LEFT JOIN customers c ON c.id=ms.customer_id LEFT JOIN services s ON s.id=ms.service_id LEFT JOIN therapists t ON t.id=ms.therapist_id WHERE ms.massage_date BETWEEN ? AND ?",[$_GET['from'],$_GET['to']]) as $r) echo implode(',',array_map(fn($v)=>'"'.str_replace('"','""',(string)$v).'"',$r))."\n"; exit; }
-if($route==='salaries'){ Auth::requireCan('salaries.view'); $therapists=DB::select("SELECT id,name FROM therapists WHERE status='active'"); $tid=(int)($_GET['therapist_id']??($therapists[0]['id']??0)); $from=Jalali::toGregorian($_GET['from']??date('Y-m-01')); $to=Jalali::toGregorian($_GET['to']??date('Y-m-d')); $calc=$tid?SalaryService::calculate($tid,$from,$to):[]; ob_start(); ?><form class="card p-3 mb-3"><div class="row g-2 align-items-end"><input type="hidden" name="r" value="salaries"><div class="col-md-3"><label class="form-label">درمانگر</label><select name="therapist_id" class="form-select"><?php foreach($therapists as $t): ?><option value="<?=$t['id']?>" <?=$tid===$t['id']?'selected':''?>><?=e($t['name'])?></option><?php endforeach;?></select></div><div class="col-md-3"><label class="form-label">از تاریخ</label><div class="input-group"><span class="input-group-text"><i class="bi bi-calendar3"></i></span><input name="from" class="form-control" data-jdp value="<?=Jalali::toJalali($from)?>" placeholder="1404/01/01" autocomplete="off"></div></div><div class="col-md-3"><label class="form-label">تا تاریخ</label><div class="input-group"><span class="input-group-text"><i class="bi bi-calendar3"></i></span><input name="to" class="form-control" data-jdp value="<?=Jalali::toJalali($to)?>" placeholder="1404/12/29" autocomplete="off"></div></div><div class="col-md-3"><button class="btn btn-primary w-100"><i class="bi bi-calculator"></i> محاسبه</button></div></div></form><?php if($calc): ?><div class="card p-4"><h3>فیش محاسبات</h3><div class="row g-3"><div class="col"><div class="stat"><span>جلسات</span><b><?=Jalali::fa($calc['session_count'])?></b></div></div><div class="col"><div class="stat"><span>فروش</span><b><?=money($calc['gross'])?></b></div></div><div class="col"><div class="stat"><span>حقوق پایه</span><b><?=money($calc['base_salary'])?></b></div></div><div class="col"><div class="stat"><span>پورسانت</span><b><?=money($calc['commission'])?></b></div></div><div class="col"><div class="stat"><span>قابل پرداخت</span><b><?=money($calc['payable'])?></b></div></div></div></div><?php endif; echo View::render('حقوق و پورسانت', ob_get_clean()); exit; }
+if ($route === 'finance' || $route === 'reports') {
+    Auth::requireCan(($route === 'finance' ? 'finance' : 'reports') . '.view');
+    $range = new DateRange($_GET);
+    if ($range->isValid()) {
+        $rev = DB::row("SELECT COUNT(*) sessions, COALESCE(SUM(final_amount),0) revenue, COALESCE(SUM(discount),0) discounts FROM massage_sessions WHERE status='completed' AND massage_date BETWEEN ? AND ?", [$range->from, $range->to]);
+        $exp = DB::value('SELECT COALESCE(SUM(amount),0) FROM expenses WHERE expense_date BETWEEN ? AND ? AND deleted_at IS NULL', [$range->from, $range->to]);
+    }
+    ob_start(); ?>
+    <form class="card p-3 mb-3">
+      <?php if ($range->errors): ?><div class="alert alert-danger" role="alert"><?=implode('<br>', array_map('e', $range->errors))?></div><?php endif; ?>
+      <div class="row g-2 align-items-end">
+        <input type="hidden" name="r" value="<?=e($route)?>">
+        <div class="col-md-3"><label class="form-label" for="f_from">از تاریخ (شمسی)</label><?=View::dateInput('from', $range->values['from'], true)?></div>
+        <div class="col-md-3"><label class="form-label" for="f_to">تا تاریخ (شمسی)</label><?=View::dateInput('to', $range->values['to'], true)?></div>
+        <div class="col-md-3 d-flex gap-2"><button class="btn btn-primary"><i class="bi bi-bar-chart"></i> گزارش</button>
+          <?php if ($range->isValid()): ?><a class="btn btn-soft" href="<?=e(url('export.csv', $range->values))?>"><i class="bi bi-download"></i> خروجی CSV</a><?php endif; ?>
+        </div>
+      </div>
+    </form>
+    <?php if ($range->isValid()): ?>
+    <div class="row g-3">
+      <div class="col-md-3"><div class="stat"><span>درآمد</span><b><?=money($rev['revenue'])?></b></div></div>
+      <div class="col-md-3"><div class="stat"><span>هزینه</span><b><?=money($exp)?></b></div></div>
+      <div class="col-md-3"><div class="stat"><span>سود خالص</span><b><?=money($rev['revenue']-$exp)?></b></div></div>
+      <div class="col-md-3"><div class="stat"><span>تعداد جلسات</span><b><?=Jalali::fa($rev['sessions'])?></b></div></div>
+    </div>
+    <div class="card p-4 mt-3"><h4>درآمد بر اساس درمانگر/خدمت/منبع معرفی</h4><p>این بخش آماده چاپ و خروجی‌گیری است و داده‌ها از رکوردهای واقعی محاسبه می‌شود.</p></div>
+    <?php endif;
+    echo View::render($route === 'finance' ? 'مالی' : 'گزارش‌ها', ob_get_clean());
+    exit;
+}
+if ($route === 'export.csv') {
+    Auth::requireCan('reports.view');
+    $range = new DateRange($_GET);
+    if (!$range->isValid()) {
+        http_response_code(422);
+        echo View::render('بازه تاریخ نامعتبر', '<div class="alert alert-danger">' . implode('<br>', array_map('e', $range->errors)) . '</div><a class="btn btn-soft" href="' . e(url('reports', $range->values)) . '">اصلاح بازه تاریخ</a>');
+        exit;
+    }
+    $rows = DB::select("SELECT ms.massage_date, CONCAT(c.first_name,' ',c.last_name) c, s.name s, t.name t, ms.final_amount FROM massage_sessions ms LEFT JOIN customers c ON c.id=ms.customer_id LEFT JOIN services s ON s.id=ms.service_id LEFT JOIN therapists t ON t.id=ms.therapist_id WHERE ms.massage_date BETWEEN ? AND ?", [$range->from, $range->to]);
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename=report.csv');
+    $output = fopen('php://output', 'w');
+    fwrite($output, "\xEF\xBB\xBF"); // UTF-8 BOM for Persian dates/names in Excel.
+    fputcsv($output, ['date', 'customer', 'service', 'therapist', 'amount'], ',', '"', '');
+    foreach ($rows as $r) {
+        $r['massage_date'] = Jalali::toJalali($r['massage_date']);
+        fputcsv($output, array_values($r), ',', '"', '');
+    }
+    fclose($output);
+    exit;
+}
+if ($route === 'salaries') {
+    Auth::requireCan('salaries.view');
+    $therapists = DB::select("SELECT id,name FROM therapists WHERE status='active'");
+    $tid = (int)($_GET['therapist_id'] ?? ($therapists[0]['id'] ?? 0));
+    $range = new DateRange($_GET);
+    $calc = $tid && $range->isValid() ? SalaryService::calculate($tid, $range->from, $range->to) : [];
+    ob_start(); ?>
+    <form class="card p-3 mb-3">
+      <?php if ($range->errors): ?><div class="alert alert-danger" role="alert"><?=implode('<br>', array_map('e', $range->errors))?></div><?php endif; ?>
+      <div class="row g-2 align-items-end">
+        <input type="hidden" name="r" value="salaries">
+        <div class="col-md-3"><label class="form-label" for="therapist_id">درمانگر</label><select id="therapist_id" name="therapist_id" class="form-select"><?php foreach ($therapists as $t): ?><option value="<?=(int)$t['id']?>" <?=$tid === (int)$t['id'] ? 'selected' : ''?>><?=e($t['name'])?></option><?php endforeach; ?></select></div>
+        <div class="col-md-3"><label class="form-label" for="f_from">از تاریخ (شمسی)</label><?=View::dateInput('from', $range->values['from'], true)?></div>
+        <div class="col-md-3"><label class="form-label" for="f_to">تا تاریخ (شمسی)</label><?=View::dateInput('to', $range->values['to'], true)?></div>
+        <div class="col-md-3"><button class="btn btn-primary w-100"><i class="bi bi-calculator"></i> محاسبه</button></div>
+      </div>
+    </form>
+    <?php if ($calc): ?>
+    <div class="card p-4"><h3>فیش محاسبات</h3><div class="row g-3">
+      <div class="col"><div class="stat"><span>جلسات</span><b><?=Jalali::fa($calc['session_count'])?></b></div></div>
+      <div class="col"><div class="stat"><span>فروش</span><b><?=money($calc['gross'])?></b></div></div>
+      <div class="col"><div class="stat"><span>حقوق پایه</span><b><?=money($calc['base_salary'])?></b></div></div>
+      <div class="col"><div class="stat"><span>پورسانت</span><b><?=money($calc['commission'])?></b></div></div>
+      <div class="col"><div class="stat"><span>قابل پرداخت</span><b><?=money($calc['payable'])?></b></div></div>
+    </div></div>
+    <?php endif;
+    echo View::render('حقوق و پورسانت', ob_get_clean());
+    exit;
+}
 if($route==='users'){
     Auth::requireCan('users.manage');
     if($_SERVER['REQUEST_METHOD']==='POST'){
@@ -512,6 +737,6 @@ if($route==='settings'){
         <button class="btn btn-primary mt-4"><i class="bi bi-check-lg"></i> ذخیره تنظیمات</button>
     </form>
     <?php echo View::render('تنظیمات', ob_get_clean()); exit; }
-if($route==='backup'){ Auth::requireCan('backup.manage'); $error=null; if($_SERVER['REQUEST_METHOD']==='POST'){ try{BackupService::create(); toast('پشتیبان تهیه شد.'); redirect('backup');}catch(Throwable $e){$error=$e->getMessage();}} ob_start(); if($error) echo '<div class="alert alert-danger">'.e($error).'</div>'; ?><div class="card p-4"><form method="post"><?=View::csrf()?><button class="btn btn-primary">ایجاد بکاپ دستی</button></form><h4 class="mt-4">فایل‌های بکاپ</h4><ul><?php foreach(BackupService::list() as $f): ?><li><?=e($f)?></li><?php endforeach;?></ul><p class="text-muted">برای بکاپ زمان‌بندی‌شده از cron طبق مستندات استفاده کنید.</p></div><?php echo View::render('پشتیبان‌گیری', ob_get_clean()); exit; }
-if($route==='audit'){ Auth::requireCan('audit.view'); $rows=DB::select('SELECT a.*, u.name user FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 200'); ob_start(); ?><div class="card p-3"><table class="table"><tr><th>زمان</th><th>کاربر</th><th>عمل</th><th>رکورد</th><th>IP</th></tr><?php foreach($rows as $r): ?><tr><td><?=Jalali::toJalali($r['created_at'])?></td><td><?=e($r['user'])?></td><td><?=e($r['action'])?></td><td><?=e($r['entity'].' #'.$r['entity_id'])?></td><td><?=e($r['ip_address'])?></td></tr><?php endforeach;?></table></div><?php echo View::render('ممیزی', ob_get_clean()); exit; }
+if($route==='backup'){ Auth::requireCan('backup.manage'); $error=null; if($_SERVER['REQUEST_METHOD']==='POST'){ try{BackupService::create(); toast('پشتیبان تهیه شد.'); redirect('backup');}catch(Throwable $e){$error=$e->getMessage();}} ob_start(); if($error) echo '<div class="alert alert-danger">'.e($error).'</div>'; ?><div class="card p-4"><form method="post"><?=View::csrf()?><button class="btn btn-primary">ایجاد بکاپ دستی</button></form><h4 class="mt-4">فایل‌های بکاپ</h4><ul><?php foreach(BackupService::list() as $f): ?><li><?=e(BackupService::displayName($f))?></li><?php endforeach;?></ul><p class="text-muted">برای بکاپ زمان‌بندی‌شده از cron طبق مستندات استفاده کنید.</p></div><?php echo View::render('پشتیبان‌گیری', ob_get_clean()); exit; }
+if($route==='audit'){ Auth::requireCan('audit.view'); $rows=DB::select('SELECT a.*, u.name user FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 200'); ob_start(); ?><div class="card p-3"><table class="table"><tr><th>زمان</th><th>کاربر</th><th>عمل</th><th>رکورد</th><th>IP</th></tr><?php foreach($rows as $r): ?><tr><td><span class="date-time"><?=e(Jalali::dateTime($r['created_at'], true))?></span></td><td><?=e($r['user'])?></td><td><?=e($r['action'])?></td><td><?=e($r['entity'].' #'.$r['entity_id'])?></td><td><?=e($r['ip_address'])?></td></tr><?php endforeach;?></table></div><?php echo View::render('ممیزی', ob_get_clean()); exit; }
 http_response_code(404); echo View::render('یافت نشد','<div class="alert alert-warning">صفحه یافت نشد.</div>');
