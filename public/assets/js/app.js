@@ -12,17 +12,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {
             console.warn('JalaliPicker init failed', e);
         }
-    } else {
-        // Graceful degradation: at least make native date inputs typeable;
-        // the server parses "1404/05/09" (latin or persian digits) too.
-        document.querySelectorAll('input[type="date"]').forEach(inp => {
-            inp.type = 'text';
-            if (!inp.getAttribute('placeholder')) {
-                inp.setAttribute('placeholder', '1404/01/01');
-            }
-            inp.setAttribute('autocomplete', 'off');
-        });
     }
+    // All server-rendered date fields are plain Jalali text inputs, so manual
+    // entry still works when JavaScript/the picker is unavailable.
 
     // Apply saved theme immediately
     const saved = localStorage.getItem('theme');

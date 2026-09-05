@@ -5,6 +5,8 @@ public/storage/backups/*
 !public/storage/backups/.gitkeep
 *.log
 .DS_Store
+# Optional browser-test dependencies
+node_modules/
 # Local session files (fallback session storage)
 storage/sessions/*
 !storage/sessions/.gitkeep

@@ -101,7 +101,9 @@
 .jdp-btn.jdp-danger { background: rgba(220, 38, 38, .08); color: #dc2626; }
 .jdp-btn.jdp-danger:hover { background: rgba(220, 38, 38, .16); }
 
-input.jalali-input { cursor: pointer; }
+input.jalali-input { cursor: pointer; direction: ltr; text-align: left; }
+.jdp-popup button:disabled { opacity: .35; cursor: not-allowed; }
+.jdp-popup button:disabled:hover { background: transparent; }
 
 /* Dark theme */
 html[data-bs-theme="dark"] .jdp-popup {
