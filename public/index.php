@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/../app/bootstrap.php';
 
-use App\Core\Auth; use App\Core\DB; use App\Core\Security; use App\Support\View; use App\Support\Jalali; use App\Support\DateRange; use App\Support\ClockTime; use App\Support\SearchQuery; use App\Support\BirthDateRange; use App\Services\Audit; use App\Services\FollowUpService; use App\Services\SalaryService; use App\Services\RetentionService; use App\Services\BackupService;
+use App\Core\Auth; use App\Core\DB; use App\Core\Security; use App\Support\View; use App\Support\Jalali; use App\Support\DateRange; use App\Support\ClockTime; use App\Support\SearchQuery; use App\Support\BirthDateRange; use App\Services\Audit; use App\Services\FollowUpService; use App\Services\SalaryService; use App\Services\RetentionService; use App\Services\BackupService; use App\Services\PaymentMethods;
 
 Security::verifyCsrf();
 $modules = require base_path('config/modules.php');
@@ -36,6 +36,7 @@ function display_value(string $name, array $f, mixed $value): string {
     if ($type === 'date') return e(Jalali::toJalali((string)$value));
     if ($type === 'time') return '<span class="date-time">' . e(ClockTime::display((string)$value)) . '</span>';
     if ($type === 'select') { $opts = is_array($f[2] ?? null) ? $f[2] : []; $v = (string)$value; return e((string)($opts[$v] ?? t($v, $v))); }
+    if ($type === 'payment_method') { $label = PaymentMethods::label((string)$value); return e($label ?? (string)$value); }
     if (in_array($type, ['customer', 'therapist', 'service', 'appointment'], true)) return e(rel_label($type, (int)$value));
     if ($type === 'services_multi') {
         $ids = (array)(json_decode((string)$value, true) ?: []); $names = [];
@@ -60,6 +61,7 @@ function cell_value(string $column, mixed $v): string {
     $v = $v ?? '';
     if ($v === '') return '';
     $c = $column;
+    if ($c === 'payment_method') { $label = PaymentMethods::label((string)$v); return e($label ?? (string)$v); }
     if (str_ends_with($c, '_at')) return '<span class="date-time">' . e(Jalali::dateTime((string)$v)) . '</span>';
     if (str_ends_with($c, '_date') || in_array($c, ['first_visit', 'last_visit', 'period_start', 'period_end'], true)) return e(Jalali::toJalali((string)$v));
     if (str_ends_with($c, '_time')) return '<span class="date-time">' . e(ClockTime::display((string)$v)) . '</span>';
@@ -108,7 +110,7 @@ function validate_fields(array $fields, array $data): array {
  * Render a single form field based on its definition in config/modules.php.
  * Field def format: [label, type, ...flags/options]
  * Supported types: text, email, number, date, time, select, textarea,
- * services_multi, customer, therapist, service, appointment.
+ * payment_method, services_multi, customer, therapist, service, appointment.
  * On validation errors the submitted POST value is re-displayed.
  */
 function input_html(string $name, array $f, mixed $value): string {
@@ -127,9 +129,33 @@ function input_html(string $name, array $f, mixed $value): string {
         $h .= '<select id="' . e($id) . '" name="' . e($name) . '" class="form-select"' . $req . '><option value="">— انتخاب کنید —</option>';
         foreach ($opts as $k => $l) $h .= '<option value="' . e((string)$k) . '"' . ((string)($value ?? '') === (string)$k ? ' selected' : '') . '>' . e((string)$l) . '</option>';
         $h .= '</select>';
+    } elseif ($type === 'payment_method') {
+        // Options come from the DB-driven payment-method list (see App\Services\PaymentMethods).
+        // A currently-selected method is always offered, even when it has been disabled or is
+        // no longer configured, so an old record can be edited without silently changing its
+        // method; disabled/unknown options that are NOT selected stay unselectable.
+        $current = (string)($value ?? '');
+        $known = false;
+        $h .= '<select id="' . e($id) . '" name="' . e($name) . '" class="form-select"' . $req . '><option value="">— انتخاب کنید —</option>';
+        foreach (PaymentMethods::all() as $m) {
+            $code = (string)$m['code'];
+            $isSel = $current !== '' && $current === $code;
+            if ($isSel) $known = true;
+            $disabled = empty($m['enabled']) && !$isSel ? ' disabled' : '';
+            $suffix = empty($m['enabled']) ? ' (غیرفعال)' : '';
+            $h .= '<option value="' . e($code) . '"' . ($isSel ? ' selected' : '') . $disabled . '>' . e((string)$m['label']) . e($suffix) . '</option>';
+        }
+        if ($current !== '' && !$known) $h .= '<option value="' . e($current) . '" selected>' . e($current) . ' (نا‌شناخته)</option>';
+        $h .= '</select>';
     } elseif (in_array($type, ['customer', 'therapist', 'service', 'appointment'], true)) {
         $h .= '<select id="' . e($id) . '" name="' . e($name) . '" class="form-select select-rel"' . $req . '><option value="">— انتخاب کنید —</option>';
-        foreach (options($type) as $o) $h .= '<option value="' . (int)$o['id'] . '"' . ((int)($value ?? 0) === (int)$o['id'] ? ' selected' : '') . '>' . e((string)$o['label']) . '</option>';
+        foreach (options($type) as $o) {
+            // For service selectors, carry the price of each massage on the option so the
+            // front-end can pre-fill the price/amount fields when a service is chosen.
+            $relOpts = $type === 'service' && array_key_exists('default_price', $o) ? ' data-price="' . e((string)$o['default_price']) . '"' : '';
+            $relSel = (int)($value ?? 0) === (int)$o['id'] ? ' selected' : '';
+            $h .= '<option value="' . (int)$o['id'] . '"' . $relOpts . $relSel . '>' . e((string)$o['label']) . '</option>';
+        }
         $h .= '</select>';
     } elseif ($type === 'services_multi') {
         $selected = [];
@@ -148,7 +174,11 @@ function input_html(string $name, array $f, mixed $value): string {
     } elseif ($type === 'number') {
         $v = (string)($value ?? '');
         if ($v !== '' && is_numeric($v)) { $f2 = (float)$v; $v = fmod($f2, 1.0) === 0.0 ? (string)(int)$f2 : (string)$f2; }
-        $h .= '<input id="' . e($id) . '" type="number" step="any" name="' . e($name) . '" value="' . e($v) . '" class="form-control" dir="ltr"' . $req . '>';
+        // Money-ish numeric fields (price, *_amount) are flagged so the front-end can
+        // auto-fill them from the chosen massage service's default price.
+        $isMoney = $name === 'price' || str_ends_with($name, '_amount');
+        $auto = $isMoney ? ' data-autofill="1"' : '';
+        $h .= '<input id="' . e($id) . '" type="number" step="any" name="' . e($name) . '" value="' . e($v) . '" class="form-control" dir="ltr"' . $auto . $req . '>';
     } else { // text / email and anything else
         $inputType = $type === 'email' ? 'email' : 'text';
         $h .= '<input id="' . e($id) . '" type="' . $inputType . '" name="' . e($name) . '" value="' . e((string)($value ?? '')) . '" class="form-control"' . $req . '>';
@@ -159,7 +189,7 @@ function input_html(string $name, array $f, mixed $value): string {
 function options(string $type): array { return match($type){
  'customer'=>DB::select("SELECT id, CONCAT(first_name,' ',last_name,' - ',mobile) label FROM customers WHERE deleted_at IS NULL ORDER BY id DESC LIMIT 500"),
  'therapist'=>DB::select("SELECT id, CONCAT(name,' (',code,')') label FROM therapists WHERE status='active' ORDER BY name"),
- 'service'=>DB::select("SELECT id, name label FROM services WHERE status='active' ORDER BY name"),
+ 'service'=>DB::select("SELECT id, name label, COALESCE(default_price,0) default_price FROM services WHERE status='active' ORDER BY name"),
  'appointment'=>array_map(fn($r)=>['id'=>$r['id'],'label'=>'#'.Jalali::fa((int)$r['id']).' — '.Jalali::toJalali((string)$r['d']).' '.ClockTime::display((string)$r['s'])], DB::select("SELECT id, appointment_date d, start_time s FROM appointments WHERE deleted_at IS NULL ORDER BY appointment_date DESC, start_time DESC LIMIT 500")),
  default=>[]}; }
 function can_module(string $module, string $action='view'): void { 
@@ -674,7 +704,47 @@ if($route==='users'){
     ob_start(); ?><div class="row g-3"><div class="col-lg-5"><form method="post" class="card p-3"><?=View::csrf()?><?php if(!empty($error)):?><div class="alert alert-danger"><?=e($error)?></div><?php endif;?><h4><?=$editUser?'ویرایش کاربر: '.e($editUser['name']):'کاربر جدید'?></h4><?php if($editUser):?><input type="hidden" name="user_id" value="<?=$editUser['id']?>"><?php endif;?><input name="name" class="form-control mb-2" placeholder="نام" value="<?=e($editUser['name']??'')?>" required><input name="email" class="form-control mb-2" placeholder="ایمیل" type="email" value="<?=e($editUser['email']??'')?>" required><input name="password" class="form-control mb-2" placeholder="<?=$editUser?'رمز جدید (خالی بگذارید تا تغییر نکند)':'رمز عبور'?>" <?=empty($editUser)?'required':''?>><select name="role_id" class="form-select mb-2"><?php foreach($roles as $r): ?><option value="<?=$r['id']?>" <?=((int)($editUser['role_id']??0)===$r['id'])?'selected':''?>><?=e($r['name'])?></option><?php endforeach;?></select><select name="status" class="form-select mb-2"><option value="active" <?=($editUser['status']??'active')==='active'?'selected':''?>>فعال</option><option value="disabled" <?=($editUser['status']??'')==='disabled'?'selected':''?>>غیرفعال</option></select><div class="d-flex gap-2"><button class="btn btn-primary">ذخیره</button><?php if($editUser):?><a class="btn btn-soft" href="<?=url('users')?>">انصراف</a><?php endif;?></div></form></div><div class="col-lg-7"><div class="card p-3"><div class="table-responsive"><table class="table"><tr><th>نام</th><th>ایمیل</th><th>نقش</th><th>وضعیت</th><th>عملیات</th></tr><?php foreach($users as $u): ?><tr><td><?=e($u['name'])?></td><td><?=e($u['email'])?></td><td><?=e($u['role'])?></td><td><?=status_badge($u['status'])?></td><td class="text-nowrap"><a class="btn btn-sm btn-outline-primary" href="<?=url('users',['edit_id'=>$u['id']])?>">ویرایش</a><?php if($u['id']!==Auth::id()):?> <a class="btn btn-sm btn-outline-danger" href="<?=url('users',['delete_id'=>$u['id']])?>" onclick="return confirm('آیا از حذف این کاربر مطمئن هستید؟')">حذف</a><?php endif;?></td></tr><?php endforeach;?></table></div></div></div></div><?php echo View::render('کاربران و نقش‌ها', ob_get_clean()); exit; }
 if($route==='settings'){
     Auth::requireCan('settings.manage');
-    if($_SERVER['REQUEST_METHOD']==='POST'){
+    $pmError = '';
+    // Payment-method manager (see App\Services\PaymentMethods). It uses its own form/action so
+    // it never overwrites the general settings below. The whole list lives in the `settings`
+    // table — i.e. inside the database — so it is captured by backups and reproduced on restore.
+    if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['pm_action']??'')!==''){
+        try {
+            $methods = PaymentMethods::all();
+            $code = (string)($_POST['pm_code'] ?? '');
+            $label = trim((string)($_POST['pm_label'] ?? ''));
+            switch ($_POST['pm_action']) {
+                case 'add':
+                    if ($label === '') throw new \RuntimeException('نام روش پرداخت را وارد کنید.');
+                    $methods = PaymentMethods::add($methods, $label);
+                    $ok = 'روش پرداخت «' . $label . '» افزوده شد.';
+                    break;
+                case 'rename':
+                    if ($label === '') throw new \RuntimeException('نام روش پرداخت را وارد کنید.');
+                    $methods = PaymentMethods::rename($methods, $code, $label);
+                    $ok = 'نام روش پرداخت بروزرسانی شد.';
+                    break;
+                case 'toggle':
+                    $methods = PaymentMethods::toggle($methods, $code);
+                    $ok = 'وضعیت روش پرداخت تغییر کرد.';
+                    break;
+                case 'delete':
+                    $inUse = PaymentMethods::usageCount($code);
+                    if ($inUse > 0) throw new \RuntimeException('این روش پرداخت در ' . Jalali::fa($inUse) . ' رکورد (جلسه یا هزینه) استفاده شده است و برای حفظ صحت تاریخچه نمی‌توان آن را حذف کرد؛ به‌جای آن «غیرفعال» کنید.');
+                    $methods = PaymentMethods::remove($methods, $code);
+                    $ok = 'روش پرداخت حذف شد.';
+                    break;
+                default:
+                    throw new \RuntimeException('عملیات نامعتبر است.');
+            }
+            PaymentMethods::save($methods);
+            Audit::log('payment_method.' . $_POST['pm_action'], 'settings', 0);
+            toast($ok);
+            redirect('settings');
+        } catch (\Throwable $e) {
+            $pmError = $e->getMessage();
+        }
+    } elseif($_SERVER['REQUEST_METHOD']==='POST'){
         // Handle logo upload
         if(!empty($_FILES['logo_file']['tmp_name'])){
             $f=$_FILES['logo_file'];
@@ -736,6 +806,44 @@ if($route==='settings'){
         </div>
         <button class="btn btn-primary mt-4"><i class="bi bi-check-lg"></i> ذخیره تنظیمات</button>
     </form>
+
+    <div class="card p-4 mt-4">
+      <h4 class="mb-3"><i class="bi bi-credit-card-2-front"></i> روش‌های پرداخت</h4>
+      <p class="text-muted small mb-3">
+        این روش‌ها هنگام ثبت <b>جلسه ماساژ</b> و <b>هزینه</b> در دسترس‌اند. فهرست در داخل <b>دیتابیس (تنظیمات)</b>
+        ذخیره می‌شود و در بکاپ لحاظ می‌گردد؛ پس از بازیابی بکاپ دقیقاً به همان فهرست زمان بکاپ برمی‌گردید و رکوردهای
+        قدیمی به هم نمی‌ریزند. برای ویرایش نام، متن را تغییر دهید و «ذخیره نام» را بزنید. روشی که در رکوردی
+        استفاده شده قابل حذف نیست؛ می‌توانید آن را «غیرفعال» کنید تا در ثبت‌های جدید نمایش داده نشود.
+      </p>
+      <?php if($pmError!==''): ?><div class="alert alert-danger" role="alert"><?=e($pmError)?></div><?php endif; ?>
+      <?php $pmMethods = PaymentMethods::all(); if(!$pmMethods): ?>
+        <div class="alert alert-warning">روش پرداختی تعریف نشده است؛ در این صورت روش‌های پیش‌فرض سامانه (نقدی، کارتخوان و…) هنگام ثبت نمایش داده می‌شوند.</div>
+      <?php else: ?>
+      <?php foreach($pmMethods as $m):
+          $pmActive = !empty($m['enabled']);
+          $pmCount = PaymentMethods::usageCount((string)$m['code']); ?>
+      <form method="post" class="d-flex flex-wrap gap-2 align-items-center border rounded p-2 mb-2">
+        <?=View::csrf()?>
+        <input type="hidden" name="pm_code" value="<?=e((string)$m['code'])?>">
+        <span class="badge text-bg-<?=$pmActive?'success':'secondary'?>"><?=$pmActive?'فعال':'غیرفعال'?></span>
+        <input type="text" name="pm_label" value="<?=e((string)$m['label'])?>" class="form-control form-control-sm" style="max-width:200px" aria-label="نام روش پرداخت">
+        <code class="text-muted small" dir="ltr"><?=e((string)$m['code'])?></code>
+        <span class="small text-muted"><?=Jalali::fa($pmCount)?> مورد استفاده</span>
+        <span class="ms-auto d-flex gap-1 flex-wrap">
+          <button name="pm_action" value="rename" class="btn btn-sm btn-soft"><i class="bi bi-check-lg"></i> ذخیره نام</button>
+          <button name="pm_action" value="toggle" class="btn btn-sm <?=$pmActive?'btn-outline-secondary':'btn-outline-success'?>"><?=$pmActive?'غیرفعال‌کردن':'فعال‌کردن'?></button>
+          <button name="pm_action" value="delete" class="btn btn-sm btn-outline-danger" onclick="return confirm('این روش پرداخت حذف شود؟ روشی که استفاده شده باشد حذف نمی‌شود.')"><i class="bi bi-trash"></i> حذف</button>
+        </span>
+      </form>
+      <?php endforeach; endif; ?>
+      <hr class="my-3">
+      <form method="post" class="d-flex flex-wrap gap-2 align-items-center">
+        <?=View::csrf()?>
+        <label class="form-label mb-0">افزودن روش پرداخت جدید</label>
+        <input type="text" name="pm_label" class="form-control" style="max-width:260px" placeholder="مثلاً: رمزین / زرین‌پال" required>
+        <button name="pm_action" value="add" class="btn btn-primary"><i class="bi bi-plus-lg"></i> افزودن</button>
+      </form>
+    </div>
     <?php echo View::render('تنظیمات', ob_get_clean()); exit; }
 if($route==='backup'){ Auth::requireCan('backup.manage'); $error=null; if($_SERVER['REQUEST_METHOD']==='POST'){ try{BackupService::create(); toast('پشتیبان تهیه شد.'); redirect('backup');}catch(Throwable $e){$error=$e->getMessage();}} ob_start(); if($error) echo '<div class="alert alert-danger">'.e($error).'</div>'; ?><div class="card p-4"><form method="post"><?=View::csrf()?><button class="btn btn-primary">ایجاد بکاپ دستی</button></form><h4 class="mt-4">فایل‌های بکاپ</h4><ul><?php foreach(BackupService::list() as $f): ?><li><?=e(BackupService::displayName($f))?></li><?php endforeach;?></ul><p class="text-muted">برای بکاپ زمان‌بندی‌شده از cron طبق مستندات استفاده کنید.</p></div><?php echo View::render('پشتیبان‌گیری', ob_get_clean()); exit; }
 if($route==='audit'){ Auth::requireCan('audit.view'); $rows=DB::select('SELECT a.*, u.name user FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 200'); ob_start(); ?><div class="card p-3"><table class="table"><tr><th>زمان</th><th>کاربر</th><th>عمل</th><th>رکورد</th><th>IP</th></tr><?php foreach($rows as $r): ?><tr><td><span class="date-time"><?=e(Jalali::dateTime($r['created_at'], true))?></span></td><td><?=e($r['user'])?></td><td><?=e($r['action'])?></td><td><?=e($r['entity'].' #'.$r['entity_id'])?></td><td><?=e($r['ip_address'])?></td></tr><?php endforeach;?></table></div><?php echo View::render('ممیزی', ob_get_clean()); exit; }
