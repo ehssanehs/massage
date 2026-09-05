@@ -8,8 +8,10 @@ final class SearchFixture {
     public static function sqlite(): PDO {
         $db = new PDO('sqlite::memory:', null, null, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
         // Test actual SQL predicates, not a stub that returns a row for every LIKE.
+        // Only CONCAT_WS and LOWER are provided: the production search deliberately
+        // uses no REGEXP_* functions (unsupported on MySQL < 8.0.4 and inconsistent
+        // between MySQL/MariaDB), so the portable REPLACE() chain must run as-is.
         $db->sqliteCreateFunction('CONCAT_WS', static fn($separator, ...$values) => $separator === null ? null : implode($separator, array_filter($values, static fn($value) => $value !== null)), -1);
-        $db->sqliteCreateFunction('REGEXP_REPLACE', static fn($value, $pattern, $replacement) => $value === null ? null : preg_replace('~' . str_replace('~', '\\~', $pattern) . '~u', $replacement, $value), 3);
         $db->sqliteCreateFunction('LOWER', static fn($value) => $value === null ? null : mb_strtolower($value, 'UTF-8'), 1);
         $db->exec('PRAGMA case_sensitive_like=ON');
         self::install($db);

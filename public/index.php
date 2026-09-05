@@ -201,25 +201,39 @@ function list_sql(string $module, array $def, SearchQuery $search, ?BirthDateRan
     $table = $def['table'];
     $select = "$table.*";
     $join = '';
-    $fields = array_map(static fn($column) => "$table.$column", $def['search']);
+    // Each search field is [expression, isNumeric]. Numeric expressions (phone/code)
+    // fold Persian/Arabic digits; text expressions fold letter variants. Keeping the
+    // two pipelines separate and shallow avoids the nested-function depth limits that
+    // a single deep normalization chain (and the old REGEXP_REPLACE) hit on some engines.
+    $searchFields = array_map(static fn($column) => ["$table.$column", false], $def['search']);
     if (in_array($module, ['appointments', 'sessions', 'packages'], true)) {
         $customerName = "CONCAT_WS(' ', c.first_name, c.last_name)";
         $select .= ", $customerName customer_name";
         $join .= " LEFT JOIN customers c ON c.id=$table.customer_id";
-        $fields = array_merge($fields, [$customerName, 'c.mobile', 'c.customer_code']);
+        // One full-name expression (empty-joined) matches both "محمد رضا" and the
+        // compact "محمدرضا" spellings, since the normalizer strips the joining space.
+        array_push($searchFields, ["CONCAT_WS('', c.first_name, c.last_name)", false], ['c.mobile', true], ['c.customer_code', true]);
     }
     if (in_array($module, ['appointments', 'sessions'], true)) {
         $select .= ', t.name therapist_name, s.name service_name';
         $join .= " LEFT JOIN therapists t ON t.id=$table.therapist_id LEFT JOIN services s ON s.id=$table.service_id";
-        $fields = array_merge($fields, ['t.name', 't.code', 's.name']);
+        array_push($searchFields, ['t.name', false], ['t.code', true], ['s.name', false]);
     }
     if ($module === 'customers') {
         $fullName = "CONCAT_WS(' ', customers.first_name, customers.last_name)";
         $select .= ", $fullName full_name, (SELECT MAX(massage_date) FROM massage_sessions ms WHERE ms.customer_id=customers.id AND status='completed') last_visit, (SELECT COALESCE(SUM(final_amount),0) FROM massage_sessions ms WHERE ms.customer_id=customers.id AND status='completed') total_spent";
-        $fields = array_values(array_diff($fields, ['customers.first_name', 'customers.last_name']));
-        array_unshift($fields, $fullName);
+        // Replace the separate first_name/last_name search columns with a single
+        // empty-joined full-name expression so compact names (no space) still match;
+        // mobile and customer_code are numeric (digit-fold) columns.
+        $searchFields = array_values(array_filter($searchFields, static fn($e) => !in_array($e[0], ['customers.first_name', 'customers.last_name'], true)));
+        array_unshift($searchFields, ["CONCAT_WS('', customers.first_name, customers.last_name)", false]);
+        foreach ($searchFields as $i => $entry) {
+            if (in_array($entry[0], ['customers.mobile', 'customers.customer_code'], true)) $searchFields[$i][1] = true;
+        }
     }
-    [$predicate, $params] = $search->predicate($fields);
+    $fields = array_map(static fn($entry) => $entry[0], $searchFields);
+    $numericKeys = array_keys(array_filter($searchFields, static fn($entry) => $entry[1]));
+    [$predicate, $params] = $search->predicate($fields, $numericKeys);
     $where = "$table.deleted_at IS NULL" . ($predicate !== '' ? " AND $predicate" : '');
     if ($module === 'customers' && $birthDates !== null) {
         [$birthPredicate, $birthParams] = $birthDates->predicate();
