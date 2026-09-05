@@ -151,7 +151,7 @@ function input_html(string $name, array $f, mixed $value): string {
         $h .= '<select id="' . e($id) . '" name="' . e($name) . '" class="form-select select-rel"' . $req . '><option value="">— انتخاب کنید —</option>';
         foreach (options($type) as $o) {
             // For service selectors, carry the price of each massage on the option so the
-            // front-end can pre-fill the price/amount fields when a service is chosen.
+            // front-end can fill/refresh the price/amount fields when a service is chosen.
             $relOpts = $type === 'service' && array_key_exists('default_price', $o) ? ' data-price="' . e((string)$o['default_price']) . '"' : '';
             $relSel = (int)($value ?? 0) === (int)$o['id'] ? ' selected' : '';
             $h .= '<option value="' . (int)$o['id'] . '"' . $relOpts . $relSel . '>' . e((string)$o['label']) . '</option>';
@@ -175,7 +175,8 @@ function input_html(string $name, array $f, mixed $value): string {
         $v = (string)($value ?? '');
         if ($v !== '' && is_numeric($v)) { $f2 = (float)$v; $v = fmod($f2, 1.0) === 0.0 ? (string)(int)$f2 : (string)$f2; }
         // Money-ish numeric fields (price, *_amount) are flagged so the front-end can
-        // auto-fill them from the chosen massage service's default price.
+        // auto-fill them from the chosen massage service's default price whenever the
+        // service is selected. The populated fields remain normal, editable inputs.
         $isMoney = $name === 'price' || str_ends_with($name, '_amount');
         $auto = $isMoney ? ' data-autofill="1"' : '';
         $h .= '<input id="' . e($id) . '" type="number" step="any" name="' . e($name) . '" value="' . e($v) . '" class="form-control" dir="ltr"' . $auto . $req . '>';
