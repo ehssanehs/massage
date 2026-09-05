@@ -65,23 +65,52 @@ document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------
     // Auto-fill price/amount from the selected massage service.
     // When a "خدمت" select that carries per-option data-price is changed,
-    // it pre-fills every empty money/price input in the same form. Fields
-    // are intentionally left editable: an already-filled value (e.g. an
-    // edited session, a discount amount) is never overwritten.
+    // the session's price and final_amount fields are filled from the
+    // service's recorded default price. The filled fields stay normal,
+    // editable inputs — a discount already entered on the form is kept and
+    // the final amount is recalculated as (price - discount). Editing the
+    // price or discount afterwards refreshes the final amount from the
+    // current price.
     // ------------------------------------------------------------------
+    function readDiscount(form) {
+        const input = form.querySelector('input[name="discount"]');
+        return Math.max(0, parseFloat(input && input.value) || 0);
+    }
+
+    function recalcFinalAmount(form) {
+        const priceInput = form.querySelector('input[name="price"][data-autofill]');
+        const finalInput = form.querySelector('input[name="final_amount"][data-autofill]');
+        if (!priceInput || !finalInput) return;
+        const price = parseFloat(priceInput.value) || 0;
+        finalInput.value = Math.max(0, price - readDiscount(form));
+    }
+
+    function applyServicePrice(form) {
+        const serviceSelect = form.querySelector('select[name="service_id"]');
+        const option = serviceSelect && serviceSelect.selectedOptions && serviceSelect.selectedOptions[0];
+        const rawPrice = option && option.getAttribute('data-price');
+        if (rawPrice === null || rawPrice === '' || rawPrice === undefined) return; // no price on this service
+        const price = parseFloat(rawPrice);
+        if (Number.isNaN(price)) return;
+
+        const priceInput = form.querySelector('input[name="price"][data-autofill]');
+        if (priceInput) priceInput.value = price;
+        recalcFinalAmount(form);
+    }
+
     document.querySelectorAll('form select[name="service_id"]').forEach((serviceSelect) => {
-        if (!serviceSelect.options.length) return;
         serviceSelect.addEventListener('change', () => {
-            const opt = serviceSelect.selectedOptions && serviceSelect.selectedOptions[0];
-            const price = opt && opt.getAttribute('data-price');
-            if (price === null || price === '' || price === undefined) return; // non-service select or no price
             const form = serviceSelect.closest('form');
-            if (!form) return;
-            form.querySelectorAll('input[data-autofill]').forEach((input) => {
-                if (!input.value || parseFloat(input.value) <= 0) {
-                    input.value = price;
-                }
-            });
+            if (form) applyServicePrice(form);
+        });
+    });
+
+    // Keep the final amount consistent when the price or discount is edited on
+    // the same form. The fields remain fully editable by the user afterwards.
+    document.querySelectorAll('form input[name="price"][data-autofill], form input[name="discount"]').forEach((moneyInput) => {
+        moneyInput.addEventListener('input', () => {
+            const form = moneyInput.closest('form');
+            if (form) recalcFinalAmount(form);
         });
     });
 
