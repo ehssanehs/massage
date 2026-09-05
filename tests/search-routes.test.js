@@ -4,7 +4,8 @@ const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 
 // Only auth/settings stay stubbed. The actual list/count SQL executes on SQLite
-// with CONCAT_WS/REGEXP_REPLACE adapters and deliberately case-sensitive LIKE.
+// with a CONCAT_WS adapter and deliberately case-sensitive LIKE; production search
+// uses only CONCAT_WS/LOWER/REPLACE (no REGEXP_REPLACE), so no regex shim exists.
 function route(module, q, page) {
     const get = { r: module };
     if (q !== undefined) get.q = q;
