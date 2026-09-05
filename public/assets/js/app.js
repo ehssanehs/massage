@@ -62,6 +62,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // ------------------------------------------------------------------
+    // Auto-fill price/amount from the selected massage service.
+    // When a "خدمت" select that carries per-option data-price is changed,
+    // it pre-fills every empty money/price input in the same form. Fields
+    // are intentionally left editable: an already-filled value (e.g. an
+    // edited session, a discount amount) is never overwritten.
+    // ------------------------------------------------------------------
+    document.querySelectorAll('form select[name="service_id"]').forEach((serviceSelect) => {
+        if (!serviceSelect.options.length) return;
+        serviceSelect.addEventListener('change', () => {
+            const opt = serviceSelect.selectedOptions && serviceSelect.selectedOptions[0];
+            const price = opt && opt.getAttribute('data-price');
+            if (price === null || price === '' || price === undefined) return; // non-service select or no price
+            const form = serviceSelect.closest('form');
+            if (!form) return;
+            form.querySelectorAll('input[data-autofill]').forEach((input) => {
+                if (!input.value || parseFloat(input.value) <= 0) {
+                    input.value = price;
+                }
+            });
+        });
+    });
+
     // Revenue chart
     const canvas = document.getElementById('revenueChart');
     if (canvas && window.Chart && canvas.dataset.url) {
