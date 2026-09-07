@@ -31,6 +31,7 @@ branches, roles, users, settings, customers, services, therapists, appointments,
 - تست‌ها: `php tests/*.php` و `node --test tests/*.test.js` (نیاز PHP 8.2 + pdo_sqlite + Node 18؛ Playwright اختیاری).
 
 ## وضعیت اجرا روی این سرور
-- کلون در `/root/massage` (commit 2ace3e4، شاخه main، 11 PR merge شده).
-- PHP روی سرور نصب نیست؛ برای اجرا/تست باید php8.2 + pdo_mysql/sqlite + mbstring نصب شود.
-- MariaDB/MySQL هم بررسی نشده.
+- کلون در `/root/massage`.
+- سرور آماده: PHP 8.2.33 (fpm/cli + pdo_mysql/sqlite, mbstring, curl, xml, zip)، MySQL 8.0.46.
+- DB: `massage_crm` با یوزر `massage_user`؛ `.env` تنظیم و `bin/console install` اجرا شده. ادمین: admin@example.com / password.
+- نکته: `tests/search.php` باید مثل پروداکشن `numericKeys=[1,2]` پاس دهد (فیکس eabee8b)؛ بدون آن جستجوی ارقام عربی در تست شکست می‌خورد ولی برنامه سالم است.
