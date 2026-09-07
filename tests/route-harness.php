@@ -38,7 +38,7 @@ namespace App\Core {
             $row = ['id'=>1, 'label'=>'آزمایشی', 'name'=>'آزمایشی', 'status'=>'active', 'created_at'=>'2026-03-21 13:05:09'];
             $extra = match ($m[1]) {
                 'users' => ['role_slug'=>'super_admin', 'role_name'=>'مدیر', 'role_id'=>1, 'permissions'=>'[]', 'email'=>'test@example.invalid'],
-                'customers' => ['first_name'=>'مشتری', 'last_name'=>'آزمایشی', 'mobile'=>'09120000000', 'customer_code'=>'C260727101', 'birth_date'=>'2026-03-21', 'registration_date'=>'2026-03-21', 'last_visit'=>'2026-03-21', 'visits'=>1, 'monetary'=>1000, 'segment'=>'active'],
+                'customers' => ['first_name'=>'مشتری', 'last_name'=>'آزمایشی', 'mobile'=>'09120000000', 'customer_code'=>'C260727101', 'birth_date'=>'2026-03-21', 'registration_date'=>'2026-03-21', 'credit_balance'=>500000, 'last_visit'=>'2026-03-21', 'visits'=>1, 'monetary'=>1000, 'segment'=>'active'],
                 'therapists' => ['hire_date'=>'2026-03-21', 'base_salary'=>100, 'salary_model'=>'base_plus_percentage', 'commission_percentage'=>20, 'fixed_commission'=>0],
                 'services' => ['default_price'=>1000, 'duration_minutes'=>60, 'revenue'=>1000],
                 'appointments' => ['customer_id'=>1, 'therapist_id'=>1, 'service_id'=>1, 'appointment_date'=>'2026-03-21', 'start_time'=>'10:00:00', 'end_time'=>'11:00:00', 'd'=>'2026-03-21', 's'=>'10:00:00'],
@@ -50,9 +50,11 @@ namespace App\Core {
                 'customer_timeline' => ['customer_id'=>1, 'type'=>'followup_created', 'title'=>'پیگیری', 'body'=>'تاریخ پیگیری: 2026-03-21 <script>alert(1)</script>'],
                 'audit_logs' => ['user'=>'مدیر', 'action'=>'create', 'entity'=>'customers', 'entity_id'=>1, 'ip_address'=>'192.0.2.1'],
                 'inventory_items' => [],
+                'credit_transactions' => [],
                 default => throw new \RuntimeException('No fixture for table ' . $m[1]),
             };
             if ($m[1] === 'inventory_items') return [];
+            if ($m[1] === 'credit_transactions') return [];
             if ($m[1] === 'massage_sessions') {
                 foreach (self::$writes as $write) if ($write['table'] === 'massage_sessions') $extra = array_replace($extra, $write['data']);
             }
@@ -74,12 +76,22 @@ namespace App\Core {
                 'brand_name'=>'سامانه آزمایشی', 'primary_color'=>'#7c3aed', 'secondary_color'=>'#14b8a6', 'default_theme'=>'light', default=>null,
             };
             if (str_contains($sql, 'followup_interval_days')) return 30;
+            if (str_contains($sql, 'credit_balance')) {
+                $fixture = self::$fixtures['customers'] ?? [];
+                if (is_array($fixture) && array_key_exists('credit_balance', $fixture)) return $fixture['credit_balance'];
+                return 500000;
+            }
             if (str_contains($sql, 'SUM(amount)')) return 100;
             return 1;
         }
 
         public static function insert(string $table, array $data): int {
             self::$writes[] = ['operation'=>'insert', 'table'=>$table, 'data'=>$data];
+            return 1;
+        }
+
+        public static function exec(string $sql, array $params = []): int {
+            self::$writes[] = ['operation'=>'exec', 'sql'=>$sql, 'params'=>$params];
             return 1;
         }
 

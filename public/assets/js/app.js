@@ -114,6 +114,48 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // ------------------------------------------------------------------
+    // Customer credit helper on session/package forms.
+    // The customer select carries data-balance on each option (injected
+    // server-side). A hint under the credit_used field shows the selected
+    // customer's available balance and updates when the customer changes;
+    // the field itself stays fully editable. The server clamps the spend
+    // to the real balance on save, so the hint is guidance, not security.
+    // ------------------------------------------------------------------
+    function creditBalanceFor(form) {
+        const sel = form.querySelector('select[name="customer_id"]');
+        const opt = sel && sel.selectedOptions && sel.selectedOptions[0];
+        const raw = opt && opt.getAttribute('data-balance');
+        return raw === null || raw === undefined ? 0 : (parseFloat(raw) || 0);
+    }
+    function refreshCreditHint(form) {
+        const creditInput = form.querySelector('input[data-credit]');
+        if (!creditInput) return;
+        let hint = creditInput.parentElement && creditInput.parentElement.querySelector('.credit-hint');
+        if (!hint) {
+            hint = document.createElement('div');
+            hint.className = 'form-text credit-hint';
+            (creditInput.closest('div') || creditInput.parentElement).appendChild(hint);
+        }
+        hint.textContent = 'اعتبار موجود مشتری: ' + new Intl.NumberFormat('fa-IR').format(creditBalanceFor(form)) + ' ریال';
+    }
+    document.querySelectorAll('input[data-credit]').forEach((creditInput) => {
+        const form = creditInput.closest('form');
+        if (form) {
+            refreshCreditHint(form);
+            const sel = form.querySelector('select[name="customer_id"]');
+            if (sel) sel.addEventListener('change', () => {
+                refreshCreditHint(form);
+                const typed = parseFloat(creditInput.value) || 0;
+                if (typed > creditBalanceFor(form)) creditInput.value = creditBalanceFor(form);
+            });
+            creditInput.addEventListener('input', () => {
+                const typed = parseFloat(creditInput.value) || 0;
+                if (typed < 0) creditInput.value = 0;
+            });
+        }
+    });
+
     // Revenue chart
     const canvas = document.getElementById('revenueChart');
     if (canvas && window.Chart && canvas.dataset.url) {

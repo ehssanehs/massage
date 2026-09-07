@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS customers (
   consent_preferences TEXT NULL,
   followup_interval_days INT NULL,
   notes TEXT NULL,
+  credit_balance DECIMAL(15,2) NOT NULL DEFAULT 0,
   created_by BIGINT UNSIGNED NULL,
   created_at DATETIME NULL, updated_at DATETIME NULL, deleted_at DATETIME NULL,
   INDEX idx_customer_mobile (mobile), INDEX idx_customer_status (status),
@@ -307,6 +308,24 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS credit_transactions (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  branch_id BIGINT UNSIGNED NULL,
+  customer_id BIGINT UNSIGNED NOT NULL,
+  kind VARCHAR(30) NOT NULL COMMENT 'earn, spend, adjust, refund',
+  amount DECIMAL(15,2) NOT NULL COMMENT 'signed: earn/positive-adjust > 0, spend/negative-adjust < 0',
+  balance_after DECIMAL(15,2) NOT NULL COMMENT 'customer credit_balance right after this entry',
+  entity VARCHAR(100) NULL COMMENT 'massage_sessions, customer_packages, customers, settings',
+  entity_id BIGINT UNSIGNED NULL,
+  note TEXT NULL,
+  created_by BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL,
+  INDEX idx_credit_customer (customer_id, created_at),
+  INDEX idx_credit_entity (entity, entity_id),
+  CONSTRAINT fk_credit_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+  CONSTRAINT fk_credit_user FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS=1;
 SET NAMES utf8mb4;
 INSERT INTO branches (id,name,code,phone,address,status,created_at) VALUES (1,'شعبه مرکزی','MAIN','02100000000','تهران','active',NOW()) ON DUPLICATE KEY UPDATE name=VALUES(name);
@@ -332,6 +351,7 @@ INSERT INTO settings (`key`,`value`,type,group_name,updated_at) VALUES
 ('address','تهران، ایران','text','business',NOW()),
 ('default_followup_days','30','number','automation',NOW()),
 ('currency','ریال','text','finance',NOW()),
+('credit_earn_percent','10','number','loyalty',NOW()),
 ('default_theme','light','text','ui',NOW())
 ON DUPLICATE KEY UPDATE `value`=VALUES(`value`);
 

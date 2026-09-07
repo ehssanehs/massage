@@ -22,6 +22,7 @@ INSERT INTO settings (`key`,`value`,type,group_name,updated_at) VALUES
 ('address','تهران، ایران','text','business',NOW()),
 ('default_followup_days','30','number','automation',NOW()),
 ('currency','ریال','text','finance',NOW()),
+('credit_earn_percent','10','number','loyalty',NOW()),
 ('default_theme','light','text','ui',NOW())
 ON DUPLICATE KEY UPDATE `value`=VALUES(`value`);
 
