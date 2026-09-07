@@ -21,6 +21,26 @@ use App\Core\DB;
 final class Credit {
     public const EARN_PERCENT_KEY = 'credit_earn_percent';
 
+    /** True once migration 002 (credit_balance + credit_transactions) is applied. */
+    public static function isAvailable(): bool {
+        static $available = null;
+        if ($available !== null) return $available;
+        try {
+            DB::value('SELECT credit_balance FROM customers WHERE 1=0');
+            DB::value('SELECT id FROM credit_transactions WHERE 1=0');
+            return $available = true;
+        } catch (\Throwable) {
+            return $available = false;
+        }
+    }
+
+    /** Fail with an actionable Persian message instead of a raw SQL error. */
+    private static function requireAvailable(): void {
+        if (!self::isAvailable()) {
+            throw new \RuntimeException('جدول اعتبار مشتری روی این دیتابیس نصب نشده است؛ ابتدا «php bin/console migrate» را اجرا کنید.');
+        }
+    }
+
     /** Earn percent from settings (0-100), defaults to 10. */
     public static function earnPercent(): float {
         $raw = DB::value('SELECT value FROM settings WHERE `key`=?', [self::EARN_PERCENT_KEY]);
@@ -28,8 +48,9 @@ final class Credit {
         return min(100.0, max(0.0, (float)$raw));
     }
 
-    /** Current cached balance of a customer. */
+    /** Current cached balance of a customer (0 when the credit schema is absent). */
     public static function balance(int $customerId): float {
+        if (!self::isAvailable()) return 0.0;
         return (float)(DB::value('SELECT credit_balance FROM customers WHERE id=?', [$customerId]) ?? 0);
     }
 
@@ -39,6 +60,7 @@ final class Credit {
      * The balance is floored at zero so a spend can never overdraw.
      */
     public static function post(int $customerId, string $kind, float $amount, ?string $entity = null, ?int $entityId = null, ?string $note = null, ?int $actorId = null): float {
+        self::requireAvailable();
         if ($customerId <= 0) throw new \InvalidArgumentException('مشتری نامعتبر است.');
         $amount = round($amount, 2);
         if ($amount == 0.0) return self::balance($customerId);
@@ -71,6 +93,7 @@ final class Credit {
      * applies to fresh spends in post().
      */
     public static function reverseFor(string $entity, int $entityId): float {
+        if (!self::isAvailable()) return 0.0;
         // Only real postings are reversible; refund rows of earlier reversals
         // are already the mirror image — reversing them again would pay out twice.
         $rows = DB::select("SELECT id, customer_id, amount FROM credit_transactions WHERE entity=? AND entity_id=? AND kind IN ('earn','spend','adjust') ORDER BY id DESC", [$entity, $entityId]);
@@ -141,8 +164,9 @@ final class Credit {
         return self::post($customerId, 'adjust', $amount, 'customers', $customerId, $note !== '' ? $note : 'اصلاح دستی اعتبار', self::actor());
     }
 
-    /** Recent ledger entries for a customer, newest first. */
+    /** Recent ledger entries for a customer, newest first (empty when absent). */
     public static function history(int $customerId, int $limit = 50): array {
+        if (!self::isAvailable()) return [];
         return DB::select('SELECT * FROM credit_transactions WHERE customer_id=? ORDER BY id DESC LIMIT ' . max(1, (int)$limit), [$customerId]);
     }
 
