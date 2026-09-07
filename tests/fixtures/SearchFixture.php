@@ -13,6 +13,11 @@ final class SearchFixture {
         // between MySQL/MariaDB), so the portable REPLACE() chain must run as-is.
         $db->sqliteCreateFunction('CONCAT_WS', static fn($separator, ...$values) => $separator === null ? null : implode($separator, array_filter($values, static fn($value) => $value !== null)), -1);
         $db->sqliteCreateFunction('LOWER', static fn($value) => $value === null ? null : mb_strtolower($value, 'UTF-8'), 1);
+        // Portable date parts for the birth-month filter (production runs on
+        // MySQL/MariaDB where YEAR()/MONTH()/DAY() are native).
+        $db->sqliteCreateFunction('YEAR', static fn($value) => $value === null || $value === '' ? null : (int)substr((string)$value, 0, 4), 1);
+        $db->sqliteCreateFunction('MONTH', static fn($value) => $value === null || $value === '' ? null : (int)substr((string)$value, 5, 2), 1);
+        $db->sqliteCreateFunction('DAY', static fn($value) => $value === null || $value === '' ? null : (int)substr((string)$value, 8, 2), 1);
         $db->exec('PRAGMA case_sensitive_like=ON');
         self::install($db);
         return $db;

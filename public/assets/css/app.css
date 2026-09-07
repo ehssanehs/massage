@@ -367,23 +367,18 @@ html[data-bs-theme="dark"] .input-group .input-group-text{
     color:#a78bfa;
 }
 
-/* ===== CUSTOMER BIRTH-DATE FILTER ===== */
-.customer-filter-form{display:grid;grid-template-columns:minmax(180px,1fr) minmax(340px,1.7fr);gap:14px;flex:1;min-width:0;align-items:start}
+/* ===== CUSTOMER BIRTH-MONTH FILTER ===== */
+.customer-filter-form{display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,1fr);gap:14px;flex:1;min-width:0;align-items:start}
 .customer-search-field{min-width:0}
 .customer-filter-form .form-label{display:block;font-size:.9rem;margin-bottom:6px}
 .customer-search-field>.form-control{width:100%;box-sizing:border-box}
 .customer-birth-filter{min-width:0;margin:0;padding:10px 14px 14px;border:1px solid rgba(124,58,237,.18);border-radius:16px;background:rgba(124,58,237,.025)}
-.customer-birth-filter>legend{float:none;width:auto;margin:0 0 8px;padding:0 6px;font-size:.9rem;font-weight:600}
-.birth-filter-inputs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.birth-filter-inputs>div{min-width:0}
-.birth-filter-inputs .input-group{display:flex;flex-wrap:nowrap;min-width:0}
-.birth-filter-inputs .form-control{min-width:0;width:100%;box-sizing:border-box}
+.customer-birth-filter .form-select{width:100%;box-sizing:border-box}
 .customer-birth-filter .form-text{font-size:.76rem;line-height:1.8;margin-top:8px}
 .customer-filter-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}
 html[data-bs-theme="dark"] .customer-birth-filter{background:rgba(124,58,237,.06);border-color:#475569}
 @media(max-width:1199px){.customer-filter-form{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:767px){.customer-filter-form{flex-basis:100%}}
-@media(max-width:575px){.birth-filter-inputs{grid-template-columns:minmax(0,1fr)}}
 
 /* ===== PRINT ===== */
 @media print{
