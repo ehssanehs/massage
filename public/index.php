@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/../app/bootstrap.php';
 
-use App\Core\Auth; use App\Core\DB; use App\Core\Security; use App\Support\View; use App\Support\Jalali; use App\Support\DateRange; use App\Support\ClockTime; use App\Support\SearchQuery; use App\Support\BirthDateRange; use App\Services\Audit; use App\Services\FollowUpService; use App\Services\SalaryService; use App\Services\RetentionService; use App\Services\BackupService; use App\Services\PaymentMethods;
+use App\Core\Auth; use App\Core\DB; use App\Core\Security; use App\Support\View; use App\Support\Jalali; use App\Support\DateRange; use App\Support\ClockTime; use App\Support\SearchQuery; use App\Support\BirthMonth; use App\Services\Audit; use App\Services\FollowUpService; use App\Services\SalaryService; use App\Services\RetentionService; use App\Services\BackupService; use App\Services\PaymentMethods;
 
 Security::verifyCsrf();
 $modules = require base_path('config/modules.php');
@@ -198,7 +198,7 @@ function can_module(string $module, string $action='view'): void {
     Auth::requireCan(($modules[$module]['perm'] ?? $module) . '.' . ($action === 'view' ? 'view' : 'manage')); 
 }
 /** Build data/count queries from exactly the same joins, scope, and search predicate. */
-function list_sql(string $module, array $def, SearchQuery $search, ?BirthDateRange $birthDates = null): array {
+function list_sql(string $module, array $def, SearchQuery $search, ?BirthMonth $birthMonth = null): array {
     $table = $def['table'];
     $select = "$table.*";
     $join = '';
@@ -236,8 +236,8 @@ function list_sql(string $module, array $def, SearchQuery $search, ?BirthDateRan
     $numericKeys = array_keys(array_filter($searchFields, static fn($entry) => $entry[1]));
     [$predicate, $params] = $search->predicate($fields, $numericKeys);
     $where = "$table.deleted_at IS NULL" . ($predicate !== '' ? " AND $predicate" : '');
-    if ($module === 'customers' && $birthDates !== null) {
-        [$birthPredicate, $birthParams] = $birthDates->predicate();
+    if ($module === 'customers' && $birthMonth !== null) {
+        [$birthPredicate, $birthParams] = $birthMonth->predicate();
         if ($birthPredicate !== '') $where .= " AND $birthPredicate";
         $params = array_merge($params, $birthParams);
     }
@@ -251,9 +251,9 @@ function render_module_list(string $module): string {
     can_module($module);
     $search = SearchQuery::fromInput($_GET['q'] ?? null);
     $q = $search->value;
-    $birthDates = $module === 'customers' ? new BirthDateRange($_GET) : null;
-    $errors = array_merge($search->error === null ? [] : [$search->error], $birthDates?->errors ?? []);
-    $hasBirthFilter = $birthDates?->hasInput() ?? false;
+    $birthMonth = $module === 'customers' ? new BirthMonth($_GET) : null;
+    $errors = array_merge($search->error === null ? [] : [$search->error], $birthMonth?->errors ?? []);
+    $hasBirthFilter = $birthMonth?->hasInput() ?? false;
     $pageValue = $_GET['page'] ?? '1';
     $page = is_scalar($pageValue) ? max(1, (int)Jalali::en((string)$pageValue)) : 1;
     $per = 20;
@@ -261,7 +261,7 @@ function render_module_list(string $module): string {
     $total = 0;
     $pages = 1;
     if (!$errors) {
-        [$sql, $params, $countSql] = list_sql($module, $def, $search, $birthDates);
+        [$sql, $params, $countSql] = list_sql($module, $def, $search, $birthMonth);
         $total = (int)DB::value($countSql, $params);
         $pages = max(1, (int)ceil($total / $per));
         // A stale page number must not make an otherwise successful search empty.
@@ -276,24 +276,24 @@ function render_module_list(string $module): string {
 <?php if ($errors): ?><div class="alert alert-danger" role="alert"><?=implode('<br>', array_map('e', $errors))?></div><?php endif; ?>
 <div class="card p-3">
   <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
-    <form method="get" class="<?=$birthDates !== null ? 'customer-filter-form' : 'd-flex flex-wrap gap-2'?>" role="search">
+    <form method="get" class="<?=$birthMonth !== null ? 'customer-filter-form' : 'd-flex flex-wrap gap-2'?>" role="search">
       <input type="hidden" name="r" value="<?=e($module)?>">
-      <?php if ($birthDates !== null): ?><div class="customer-search-field"><label class="form-label" for="list-search-query">جستجوی مشتری</label><?php endif; ?>
-      <input id="list-search-query" type="search" name="q" value="<?=e($q)?>" class="form-control <?=$birthDates === null ? 'w-auto' : ''?>" dir="auto" maxlength="<?=SearchQuery::MAX_LENGTH?>" placeholder="<?=e($hint)?>" aria-label="<?=e('جستجو در ' . $def['title'])?>">
-      <?php if ($birthDates !== null): ?></div>
-      <fieldset class="customer-birth-filter" aria-describedby="birth-filter-help">
-        <legend>بازهٔ تاریخ تولد (شمسی)</legend>
-        <div class="birth-filter-inputs">
-          <div><label class="form-label" for="f_birth_from">از تاریخ تولد</label><?=View::dateInput('birth_from', $birthDates->values['birth_from'])?></div>
-          <div><label class="form-label" for="f_birth_to">تا تاریخ تولد</label><?=View::dateInput('birth_to', $birthDates->values['birth_to'])?></div>
-        </div>
-        <div id="birth-filter-help" class="form-text text-muted">سال، ماه و روز تولد را وارد کنید. هر سمت خالی باشد، آن سمت محدود نمی‌شود؛ هر دو روزِ ابتدا و انتها شامل نتایج‌اند.</div>
-      </fieldset>
+      <?php if ($birthMonth !== null): ?><div class="customer-search-field"><label class="form-label" for="list-search-query">جستجوی مشتری</label><?php endif; ?>
+      <input id="list-search-query" type="search" name="q" value="<?=e($q)?>" class="form-control <?=$birthMonth === null ? 'w-auto' : ''?>" dir="auto" maxlength="<?=SearchQuery::MAX_LENGTH?>" placeholder="<?=e($hint)?>" aria-label="<?=e('جستجو در ' . $def['title'])?>">
+      <?php if ($birthMonth !== null): ?></div>
+      <div class="customer-birth-filter">
+        <label class="form-label" for="f_birth_month">ماه تولد (شمسی)</label>
+        <select id="f_birth_month" name="birth_month" class="form-select">
+          <option value="">— همهٔ ماه‌ها —</option>
+          <?php foreach (BirthMonth::MONTHS as $num => $name): ?><option value="<?=$num?>"<?=$birthMonth->month === $num ? ' selected' : ''?>><?=e($name)?></option><?php endforeach; ?>
+        </select>
+        <div id="birth-filter-help" class="form-text text-muted">مشتریانی که در ماه انتخاب‌شده متولد شده‌اند، بدون توجه به سال تولد.</div>
+      </div>
       <div class="customer-filter-actions">
       <?php endif; ?>
       <button class="btn btn-soft">جستجو</button>
       <?php if ($q !== '' || $errors || $hasBirthFilter): ?><a class="btn btn-soft" href="<?=e(url($module))?>"><?=$hasBirthFilter ? 'پاک‌کردن فیلترها' : 'پاک‌کردن جستجو'?></a><?php endif; ?>
-      <?php if ($birthDates !== null): ?></div><?php endif; ?>
+      <?php if ($birthMonth !== null): ?></div><?php endif; ?>
     </form>
     <?php if(Auth::can($def['perm'].'.manage')): ?><a class="btn btn-primary" href="<?=url($module.'.create')?>"><i class="bi bi-plus-lg"></i> افزودن</a><?php endif; ?>
   </div>
@@ -302,7 +302,7 @@ function render_module_list(string $module): string {
     <?php if(!$rows): ?><tr><td colspan="20" class="empty">رکوردی یافت نشد.</td></tr><?php endif;?>
   </tbody></table></div>
   <div class="small text-muted">تعداد: <?=Jalali::fa($total)?></div>
-  <?=render_pager($module, $page, $pages, $q, $birthDates?->queryParameters() ?? [])?>
+  <?=render_pager($module, $page, $pages, $q, $birthMonth?->queryParameters() ?? [])?>
 </div>
 <?php return (string)ob_get_clean(); }
 
