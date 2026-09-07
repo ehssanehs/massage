@@ -51,7 +51,9 @@ if ($dsn) {
 }
 $fields = ["CONCAT_WS(' ', customers.first_name, customers.last_name)", 'customers.mobile', 'customers.customer_code', 'customers.occupation'];
 function lookup(PDO $db, mixed $value, array $fields): array {
-    [$predicate, $params] = SearchQuery::fromInput($value)->predicate($fields);
+    // Production (index.php list_sql) marks mobile/code columns as numeric so the
+    // digit-fold pipeline applies; the harness must mirror that call exactly.
+    [$predicate, $params] = SearchQuery::fromInput($value)->predicate($fields, [1, 2]);
     $statement = $db->prepare('SELECT id FROM customers WHERE deleted_at IS NULL' . ($predicate === '' ? '' : ' AND ' . $predicate) . ' ORDER BY id');
     $statement->execute($params);
     return array_map('intval', $statement->fetchAll(PDO::FETCH_COLUMN));
