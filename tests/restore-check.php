@@ -14,14 +14,15 @@ function expectSame(mixed $expected, mixed $actual, string $message): void {
 }
 
 $schema = RestoreCheckService::expectedSchema();
-expectSame(18, count($schema), 'All application tables, not only configurable modules, are checked');
-expectSame(248, array_sum(array_map('count', $schema)), 'DDL parser includes same-line and backticked columns');
+expectSame(19, count($schema), 'All application tables, not only configurable modules, are checked');
+expectSame(260, array_sum(array_map('count', $schema)), 'DDL parser includes same-line and backticked columns');
 $dateCount = 0;
 foreach ($schema as $columns) $dateCount += count(array_filter($columns, fn($type) => in_array($type, ['date', 'datetime'], true)));
-expectSame(61, $dateCount, 'All DATE/DATETIME fields from the pre-change schema are covered');
+expectSame(62, $dateCount, 'All DATE/DATETIME fields from the pre-change schema are covered');
 $modules = require base_path('config/modules.php');
 foreach ($modules as $module) {
     foreach ($module['fields'] as $column => $definition) {
+        if (in_array('virtual', $definition, true)) continue; // form-only, never a column
         expectSame(true, isset($schema[$module['table']][$column]), 'Schema parser includes every CRUD field');
     }
 }
@@ -70,7 +71,7 @@ expectSame(true, $report['ok'], 'Standard legacy Gregorian storage is compatible
 expectSame([], $report['schema_issues'], 'No schema migration required for the old schema');
 expectSame([], $report['date_issues'], 'Valid Gregorian dates and nullable values are accepted');
 expectSame($before, serialize($records), 'Checking restored data never rewrites it');
-expectSame(20, count($queries), 'Metadata queries plus one bounded SELECT per table');
+expectSame(21, count($queries), 'Metadata queries plus one bounded SELECT per table');
 expectSame('۱۳۷۱/۰۲/۲۰', Jalali::toJalali($records['customers'][0]['birth_date']), 'Old birth date displays as Jalali');
 expectSame('تاریخ پیگیری: ۱۴۰۳/۱۲/۳۰', Jalali::datesInText($records['customer_timeline'][0]['body']), 'Legacy CRM body displays correctly');
 expectSame('2025-03-20', Jalali::toGregorian('۱۴۰۳/۱۲/۳۰'), 'Legacy leap date survives editing');

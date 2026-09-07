@@ -3,15 +3,20 @@
 require __DIR__ . '/../app/bootstrap.php';
 use App\Core\DB; use App\Services\FollowUpService; use App\Services\BackupService; use App\Services\RestoreCheckService;
 $cmd = $argv[1] ?? 'help';
+function run_migrations(): void {
+    $files = glob(base_path('database/migrations/*.sql')) ?: [];
+    sort($files);
+    foreach ($files as $file) DB::pdo()->exec(file_get_contents($file));
+}
 try {
     if ($cmd === 'migrate') {
-        DB::pdo()->exec(file_get_contents(base_path('database/migrations/001_create_schema.sql')));
+        run_migrations();
         echo "Migrations completed.\n";
     } elseif ($cmd === 'seed') {
         DB::pdo()->exec(file_get_contents(base_path('database/seeders/001_seed_defaults.sql')));
         echo "Seeders completed.\n";
     } elseif ($cmd === 'install') {
-        DB::pdo()->exec(file_get_contents(base_path('database/migrations/001_create_schema.sql')));
+        run_migrations();
         DB::pdo()->exec(file_get_contents(base_path('database/seeders/001_seed_defaults.sql')));
         echo "Application installed. Default admin: admin@example.com / password\n";
     } elseif ($cmd === 'user:password') {

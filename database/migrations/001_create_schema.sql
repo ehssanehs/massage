@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS customers (
   consent_preferences TEXT NULL,
   followup_interval_days INT NULL,
   notes TEXT NULL,
+  credit_balance DECIMAL(15,2) NOT NULL DEFAULT 0,
   created_by BIGINT UNSIGNED NULL,
   created_at DATETIME NULL, updated_at DATETIME NULL, deleted_at DATETIME NULL,
   INDEX idx_customer_mobile (mobile), INDEX idx_customer_status (status),
@@ -305,6 +306,24 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at DATETIME NOT NULL,
   INDEX idx_audit_action (action), INDEX idx_audit_created (created_at),
   CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS credit_transactions (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  branch_id BIGINT UNSIGNED NULL,
+  customer_id BIGINT UNSIGNED NOT NULL,
+  kind VARCHAR(30) NOT NULL COMMENT 'earn, spend, adjust, refund',
+  amount DECIMAL(15,2) NOT NULL COMMENT 'signed: earn/positive-adjust > 0, spend/negative-adjust < 0',
+  balance_after DECIMAL(15,2) NOT NULL COMMENT 'customer credit_balance right after this entry',
+  entity VARCHAR(100) NULL COMMENT 'massage_sessions, customer_packages, customers, settings',
+  entity_id BIGINT UNSIGNED NULL,
+  note TEXT NULL,
+  created_by BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL,
+  INDEX idx_credit_customer (customer_id, created_at),
+  INDEX idx_credit_entity (entity, entity_id),
+  CONSTRAINT fk_credit_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+  CONSTRAINT fk_credit_user FOREIGN KEY (created_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS=1;

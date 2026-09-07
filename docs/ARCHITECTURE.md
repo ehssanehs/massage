@@ -34,6 +34,15 @@ bin/console    ابزار CLI و Scheduler
 - ورود rate limit سمت session دارد.
 - فایل‌های حساس خارج از public نگهداری می‌شوند؛ برای بکاپ Production بهتر است مسیر بکاپ خارج از DocumentRoot تنظیم شود.
 
+## اعتبار مشتری (کیف وفاداری)
+
+- `customers.credit_balance` موجودی کش‌شده و `credit_transactions` لجر فقط‌افزودنی (earn/spend/adjust/refund با مبلغ علامت‌دار و موجودیِ بعد از تراکنش) است.
+- درصد کسب از تنظیم `credit_earn_percent` (پیش‌فرض ۱۰٪) خوانده می‌شود؛ مبنا `final_amount` جلسه (یا `price` پکیج) با وضعیت پرداخت `paid/partial` است. `unpaid` اعتباری نمی‌دهد.
+- مصرف با فیلد مجازی `credit_used` در فرم جلسه/پکیج (ستون دیتابیس نیست؛ با فلگ `virtual` در `config/modules.php` مشخص و در `handle_module` قبل از ذخیره جدا می‌شود)؛ سمت سرور به موجودی واقعی clamp می‌شود، پس موجودی هرگز منفی نمی‌شود. سمت کلاینت فقط hint و clamp نمایشی است (`app.js` از `data-balance` گزینه مشتری).
+- ویرایش/حذف جلسه یا پکیج ابتدا اثر اعتباری قبلی همان رکورد را با `Credit::reverseFor` (LIFO، معکوس دقیق) برمی‌گرداند؛ موجودی نمایشی از SUM لجر بازمحاسبه و در صفر کف می‌شود.
+- شارژ/کسر دستی از پروفایل مشتری (مسیر `customers.credit`، نیازمند `customers.manage`) با ثبت دلیل؛ هر تغییر در `customer_timeline` و `audit_logs` ثبت می‌شود.
+- منطق در `App\Services\Credit` متمرکز است؛ تست‌ها در `tests/credit.php` (نیازمند دیتابیس `*_test` جداگانه) و `tests/credit-routes.test.js`.
+
 ## تاریخ شمسی
 
 تاریخ‌ها در دیتابیس به‌صورت Gregorian استاندارد ذخیره می‌شوند و در UI توسط `App\Support\Jalali` به شمسی نمایش داده/از شمسی تبدیل می‌شوند.
