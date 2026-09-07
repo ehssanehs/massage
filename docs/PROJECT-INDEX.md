@@ -8,7 +8,7 @@
 ## معماری
 - **Core:** `DB` (PDO singleton، insert/update عمومی)، `Auth` (session، RBAC با role+permissions JSON، super_admin=* )، `Security` (CSRF، rate limit، cleanString).
 - **Services:** `Audit` (audit_logs)، `FollowUpService` (تولید پیگیری از جلسات)، `SalaryService` (حقوق/پورسانت)، `RetentionService` (RFM)، `BackupService` (mysqldump)، `RestoreCheckService`، `Notification`، `PaymentMethods` (لیست روش‌های پرداخت در جدول settings).
-- **Support:** `View` (layout RTL، dateInput/timeInput جلالی)، `Jalali` (تبدیل شمسی/میلادی، دوره ۳۳ساله خیام)، `DateRange`، `ClockTime` (نرمال‌سازی ساعت ۲۴ساعته)، `SearchQuery` (نرمال‌سازی فارسی: ی/ي، ک/ك، ارقام، اعراب؛ AND چندواژه‌ای)، `BirthDateRange`.
+- **Support:** `View` (layout RTL، dateInput/timeInput جلالی)، `Jalali` (تبدیل شمسی/میلادی، دوره ۳۳ساله خیام)، `DateRange`، `ClockTime` (نرمال‌سازی ساعت ۲۴ساعته)، `SearchQuery` (نرمال‌سازی فارسی: ی/ي، ک/ك، ارقام، اعراب؛ AND چندواژه‌ای)، `BirthMonth` (فیلتر ماه تولد شمسی ۱-۱۲ بدون سال).
 - **UI assets:** jalalidatepicker + timepicker محلی (بدون CDN برای این دو)، app.js.
 
 ## روتر (public/index.php ~865 خط)
