@@ -9,8 +9,10 @@ php tests/jalali.php
 php tests/time.php
 php tests/search.php
 php tests/birthmonth.php
+php tests/followup.php
 php tests/restore-check.php
 DB_DATABASE=massage_test DB_USERNAME=... DB_PASSWORD=... php tests/credit.php
+DB_DATABASE=massage_test DB_USERNAME=... DB_PASSWORD=... php tests/followup.php
 node --test tests/*.test.js
 ```
 
@@ -19,6 +21,8 @@ node --test tests/*.test.js
 - `birthmonth.php`: فیلتر اختیاری ماه تولد شمسی (۱ تا ۱۲، بدون سال)، ارقام فارسی/لاتین، رد ماه نامعتبر، نادیده‌گرفتن ورودی آرایه، حذف NULL/خالی/صفر از نتایج، و recall صددرصدی روی هر روز تقویم ۱۹۲۰ تا ۲۰۲۶ در هر دو موتور SQLite و MySQL (با `BIRTHMONTH_TEST_MYSQL_DSN`).
 - `birthmonth-routes.test.js`: اجرای SQL فیلتر ماه از front controller روی دادهٔ آزمایشی، ترکیب با جستجوی نام، حذف NULL/صفر/خالی از نتایج، ستون شمسی، حفظ q و ماه در صفحه‌بندی، reset و محدودبودن فیلتر به مشتریان.
 - `credit.php`: منطق کیف اعتبار روی دیتابیس `*_test` جداگانه (داخل تراکنش rollbackشده): کسب درصد، idempotency، clamp مصرف، برگشت ویرایش/حذف، کف صفر، شارژ دستی و تاریخچه. روی دیتابیس اصلی اجرا نکنید.
+- `followup.php`: بهبودهای مرکز پیگیری روی دیتابیس `*_test` (داخل تراکنش rollbackشده): ستون `customer_timeline.deleted_at`، ایجاد پیگیری مجدد با «X روز دیگر»، عدم ایجاد برای رزرو شد، ردیف‌های تایم‌لاین (نتیجه/زمان‌بندی) و حذف نرم تایم‌لاین.
+- `followup-routes.test.js`: جستجوی نام مشتری (LIKE با پارامتر)، فیلترهای مستقل «معوق» و «امروز»، حذف گروهی نرم (soft-delete)، ثبت نتیجه با پیگیری مجدد، ردیف تایم‌لاین `followup_done` برای رزرو شد و UI انتخاب چندتایی.
 - `credit-routes.test.js`: رندر فیلد مجازی `credit_used`، ثبت earn/spend در لجر از front controller، عدم ذخیره ستون مجازی، و عدم کسب برای `unpaid`.
 - `search.php`: عادی‌سازی حروف/اعداد/فاصله/اعراب، نام کامل و ترتیب معکوس واژه‌ها، نام مرکب، دادهٔ قدیمی، مقدار صفر، LIKE کاملاً لفظی، ورودی نامعتبر و اجرای واقعی predicate روی ردیف‌های آزمایشی.
 - `search-routes.test.js`: اجرای SQL فهرست و COUNT واقعی از front controller، نام‌های مرتبط نوبت/جلسه/پکیج، دادهٔ حذف‌شده، شمارش و صفحه‌بندی، لینک پاک‌کردن و حفاظت ورودی. برای این تست، `route-harness.php` فقط SQL فهرست/شمارش را روی SQLite حافظه‌ای با تابع سازگاری `CONCAT_WS` اجرا می‌کند؛ جست‌وجوی تولیدشده فقط از `CONCAT_WS/LOWER/REPLACE` استفاده می‌کند و به `REGEXP_REPLACE` وابسته نیست (روی MySQL قدیمی‌تر از 8.0.4 پشتیبانی نمی‌شود)؛ احراز هویت و تنظیمات همچنان آزمایشی‌اند.

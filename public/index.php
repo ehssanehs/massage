@@ -331,7 +331,18 @@ function after_save(string $module, int $id, array $data, bool $new): void { if(
 function show_record(string $module, int $id): string { global $modules; $def=$modules[$module]; $row=$id>0?DB::row('SELECT * FROM '.$def['table'].' WHERE id=? AND deleted_at IS NULL',[$id]):null; if(!$row) return '<div class="alert alert-warning">رکورد مورد نظر یافت نشد یا حذف شده است.</div>'; ob_start(); ?><div class="card p-4"><div class="d-flex justify-content-between align-items-center"><h3 class="m-0"><?=e($def['title'])?> #<?=Jalali::fa($id)?></h3><div class="d-flex gap-2"><a class="btn btn-soft" href="<?=url($module)?>">بازگشت به لیست</a><?php if(Auth::can($def['perm'].'.manage')): ?><a class="btn btn-outline-primary" href="<?=url($module.'.edit',['id'=>$id])?>">ویرایش</a><?php endif;?></div></div><div class="row g-3 mt-2"><?php foreach($def['fields'] as $n=>$f): ?><div class="col-md-6"><div class="meta"><span><?=e($f[0])?></span><b><?=display_value($n,$f,$row[$n]??'')?></b></div></div><?php endforeach;?></div></div><?php if($module==='customers') echo customer_profile_extra($id); return (string)ob_get_clean(); }
 function customer_profile_extra(int $id): string {
     $metrics = DB::row("SELECT COUNT(*) visits, MIN(massage_date) first_visit, MAX(massage_date) last_visit, COALESCE(SUM(final_amount),0) total, AVG(final_amount) avg_spend, AVG(satisfaction_score) avg_score FROM massage_sessions WHERE customer_id=? AND status='completed'", [$id]);
-    $timeline = DB::select('SELECT * FROM customer_timeline WHERE customer_id=? ORDER BY created_at DESC, id DESC LIMIT 50', [$id]);
+    $timeline = DB::select('SELECT * FROM customer_timeline WHERE customer_id=? AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 50', [$id]);
+    // Attach the current status of referenced followups so the timeline can show
+    // whether each followup was actually completed (e.g. "رزرو شد") or still pending.
+    $fuStatuses = [];
+    $fuIds = array_filter(array_unique(array_map(fn($e)=>(int)($e['entity_id']??0), array_filter($timeline, fn($e)=>in_array($e['type'],['followup','followup_done','followup_scheduled','followup_created'],true)))), fn($v)=>$v>0);
+    if($fuIds){
+        $in = implode(',', array_fill(0, count($fuIds), '?'));
+        foreach(DB::select("SELECT id, status, due_date FROM followups WHERE id IN ($in)", array_values($fuIds)) as $fr){
+            $fuStatuses[$fr['id']] = $fr;
+        }
+    }
+    $fuStatusLabels = ['pending'=>'در انتظار تماس','contacted'=>'تماس گرفته شد','not_answered'=>'پاسخ نداد','interested'=>'علاقه‌مند','booked'=>'رزرو شد','refused'=>'رد کرد','requested_later'=>'تماس بعداً'];
     $creditBalance = Credit::balance($id);
     $creditHistory = Credit::history($id, 20);
     $creditKinds = ['earn' => 'کسب اعتبار', 'spend' => 'مصرف', 'adjust' => 'اصلاح دستی', 'refund' => 'برگشت'];
@@ -368,6 +379,18 @@ function customer_profile_extra(int $id): string {
       <div>
         <time class="date-time"><?=e(Jalali::dateTime($event['created_at']))?></time>
         <b><?=e(Jalali::datesInText($event['title']))?></b>
+        <?php $fuRef = in_array($event['type'],['followup','followup_done','followup_scheduled','followup_created'],true) ? ($fuStatuses[(int)($event['entity_id']??0)] ?? null) : null; ?>
+        <?php if($fuRef): ?>
+          <div class="small mt-1">
+            <?php $st=$fuRef['status']; if($st==='booked'): ?>
+              <span class="badge text-bg-success"><i class="bi bi-check2-circle"></i> انجام شد — رزرو شد</span>
+            <?php elseif($st==='pending'): ?>
+              <span class="badge text-bg-secondary">در انتظار انجام — سررسید <?=e(Jalali::toJalali($fuRef['due_date']))?></span>
+            <?php else: ?>
+              <span class="badge text-bg-info">وضعیت: <?=e($fuStatusLabels[$st] ?? $st)?></span>
+            <?php endif; ?>
+          </div>
+        <?php endif; ?>
         <p><?=nl2br(e(Jalali::datesInText($event['body'])))?></p>
       </div>
       <?php endforeach; if (!$timeline): ?><p class="empty">هنوز رویدادی ثبت نشده است.</p><?php endif; ?>
@@ -523,6 +546,20 @@ if($route==='followups'){
     Auth::requireCan('followups.view');
     if($_SERVER['REQUEST_METHOD']==='POST'){
         Auth::requireCan('followups.manage');
+        // Bulk delete
+        if(($_POST['bulk_action']??'')==='delete'){
+            $ids=array_filter(array_map('intval',(array)($_POST['ids']??[])),fn($v)=>$v>0);
+            $done=0;
+            foreach($ids as $bid){
+                $ex=DB::row('SELECT id FROM followups WHERE id=? AND deleted_at IS NULL',[$bid]);
+                if(!$ex) continue;
+                DB::exec('UPDATE followups SET deleted_at=NOW() WHERE id=?',[$bid]);
+                Audit::log('followups.delete','followups',$bid);
+                $done++;
+            }
+            toast($done>0 ? Jalali::fa($done).' پیگیری حذف شد.' : 'پیگیری برای حذف انتخاب نشده بود.');
+            redirect('followups', ['filter'=>$_GET['filter']??'active','q'=>$_GET['q']??'']);
+        }
         $id=(int)($_POST['id']??0);
         if($id){
             $updateData=['status'=>$_POST['status'],'updated_at'=>date('Y-m-d H:i:s')];
@@ -530,10 +567,26 @@ if($route==='followups'){
             if(in_array($_POST['status'],['contacted','not_answered','interested','booked','refused','requested_later'],true))$updateData['contacted_at']=date('Y-m-d H:i:s');
             DB::update('followups',$updateData,'id=:id',['id'=>$id]);
             $f=DB::row('SELECT * FROM followups WHERE id=?',[$id]);
-            if($f) DB::insert('customer_timeline',['customer_id'=>$f['customer_id'],'type'=>'followup','title'=>'نتیجه پیگیری','body'=>($_POST['result']??t($_POST['status'],$_POST['status'])),'entity'=>'followups','entity_id'=>$id,'created_at'=>date('Y-m-d H:i:s')]);
-            toast('نتیجه پیگیری ثبت شد.');
+            if($f){
+                DB::insert('customer_timeline',['customer_id'=>$f['customer_id'],'type'=>'followup','title'=>'نتیجه پیگیری','body'=>($_POST['result']??t($_POST['status'],$_POST['status'])),'entity'=>'followups','entity_id'=>$id,'created_at'=>date('Y-m-d H:i:s')]);
+                if($_POST['status']==='booked'){
+                    DB::insert('customer_timeline',['customer_id'=>$f['customer_id'],'type'=>'followup_done','title'=>'پیگیری انجام شد','body'=>'نتیجه: رزرو شد','entity'=>'followups','entity_id'=>$id,'created_at'=>date('Y-m-d H:i:s')]);
+                }
+                // Optional re-followup: any non-booked status + a day count creates the next followup record.
+                $reDays=(int)($_POST['refollow_days']??0);
+                if($_POST['status']!=='booked' && $reDays>0 && $reDays<=365){
+                    $due=date('Y-m-d', strtotime("+{$reDays} days"));
+                    $desc=trim(($f['description']??''));
+                    $newDesc='پیگیری مجدد پس از تماس '.date('Y-m-d').' — '.($desc!==''?$desc:'بدون شرح قبلی');
+                    DB::insert('followups',['customer_id'=>$f['customer_id'],'session_id'=>$f['session_id']??null,'due_date'=>$due,'status'=>'pending','priority'=>$f['priority']??'normal','description'=>$newDesc,'assigned_to'=>$f['assigned_to']??null,'created_at'=>date('Y-m-d H:i:s')]);
+                    DB::insert('customer_timeline',['customer_id'=>$f['customer_id'],'type'=>'followup_scheduled','title'=>'پیگیری بعدی زمان‌بندی شد','body'=>'تاریخ پیگیری بعدی: '.Jalali::toJalali($due).' ('.Jalali::fa($reDays).' روز دیگر)','entity'=>'followups','entity_id'=>$id,'created_at'=>date('Y-m-d H:i:s')]);
+                    toast('نتیجه ثبت شد و پیگیری بعدی برای '.Jalali::toJalali($due).' ساخته شد.');
+                } else {
+                    toast('نتیجه پیگیری ثبت شد.');
+                }
+            }
         }
-        redirect('followups', ['filter'=>$_GET['filter']??'active']);
+        redirect('followups', ['filter'=>$_GET['filter']??'active','q'=>$_GET['q']??'']);
     }
     // Generate missing followups button
     if(isset($_GET['generate'])){
@@ -544,11 +597,14 @@ if($route==='followups'){
     }
 
     $filter=$_GET['filter']??'active';
+    $q=trim((string)Security::cleanString(isset($_GET['q']) ? (string)$_GET['q'] : ''));
+    $nameWhere=$q!=='' ? " AND CONCAT(c.first_name,' ',c.last_name) LIKE :qname" : '';
+    $qParam=$q!=='' ? [':qname'=>'%'.$q.'%'] : [];
     $groups=[];
     if($filter==='active'){
         $groups=[
-            'معوق (گذشته)'=>"f.due_date<CURDATE() AND f.status IN ('pending','requested_later')",
             'امروز'=>"f.due_date=CURDATE() AND f.status IN ('pending','requested_later')",
+            'معوق (گذشته)'=>"f.due_date<CURDATE() AND f.status IN ('pending','requested_later')",
             '۷ روز آینده'=>"f.due_date>CURDATE() AND f.due_date<=DATE_ADD(CURDATE(), INTERVAL 7 DAY) AND f.status IN ('pending','requested_later')",
             'آینده دور'=>"f.due_date>DATE_ADD(CURDATE(), INTERVAL 7 DAY) AND f.status IN ('pending','requested_later')"
         ];
@@ -563,6 +619,12 @@ if($route==='followups'){
         ];
     } else {
         $groups=['همه پیگیری‌ها'=>"1=1"];
+    }
+    // Dedicated quick filters: standalone overdue / today views
+    if($filter==='overdue'){
+        $groups=['معوق (گذشته)'=>"f.due_date<CURDATE() AND f.status IN ('pending','requested_later')"];
+    } elseif($filter==='today'){
+        $groups=['امروز'=>"f.due_date=CURDATE() AND f.status IN ('pending','requested_later')"];
     }
 
     $totalCount=(int)DB::value("SELECT COUNT(*) FROM followups f WHERE f.deleted_at IS NULL AND f.status IN ('pending','requested_later')");
@@ -582,9 +644,11 @@ if($route==='followups'){
       </div>
 
       <div class="card p-3 mb-4">
-        <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center">
+        <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
           <div class="d-flex gap-2 flex-wrap">
             <a class="btn <?=($filter==='active')?'btn-primary':'btn-soft'?>" href="<?=url('followups',['filter'=>'active'])?>"><i class="bi bi-lightning-charge"></i> فعال و معوق</a>
+            <a class="btn <?=($filter==='overdue')?'btn-danger':'btn-soft'?>" href="<?=url('followups',['filter'=>'overdue'])?>"><i class="bi bi-exclamation-triangle"></i> معوق</a>
+            <a class="btn <?=($filter==='today')?'btn-warning':'btn-soft'?>" href="<?=url('followups',['filter'=>'today'])?>"><i class="bi bi-calendar-event"></i> امروز</a>
             <a class="btn <?=($filter==='done')?'btn-primary':'btn-soft'?>" href="<?=url('followups',['filter'=>'done'])?>"><i class="bi bi-check2-all"></i> انجام شده</a>
             <a class="btn <?=($filter==='all')?'btn-primary':'btn-soft'?>" href="<?=url('followups',['filter'=>'all'])?>"><i class="bi bi-list-ul"></i> همه</a>
           </div>
@@ -593,12 +657,32 @@ if($route==='followups'){
             <a class="btn btn-sm btn-outline-secondary" href="<?=url('followups',['generate'=>1,'filter'=>$filter])?>" onclick="return confirm('پیگیری‌های جاافتاده از جلسات قبلی ساخته شوند؟')"><i class="bi bi-plus-circle"></i> ساخت پیگیری‌های جاافتاده</a>
           </div>
         </div>
+        <form method="get" class="d-flex gap-2 align-items-center">
+          <input type="hidden" name="r" value="followups">
+          <input type="hidden" name="filter" value="<?=e($filter)?>">
+          <div class="input-group input-group-sm" style="max-width:320px">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" name="q" value="<?=e($q)?>" class="form-control" placeholder="جستجوی نام مشتری...">
+            <?php if($q!==''): ?><a class="btn btn-outline-secondary" href="<?=url('followups',['filter'=>$filter])?>"><i class="bi bi-x-lg"></i></a><?php endif; ?>
+          </div>
+          <button class="btn btn-sm btn-primary">جستجو</button>
+          <?php if($q!==''): ?><span class="small text-muted">نتایج برای «<?=e($q)?>»</span><?php endif; ?>
+        </form>
+        <form method="post" id="bulkDeleteForm" class="mt-2" onsubmit="return confirm('پیگیری‌های انتخاب‌شده حذف شوند؟')">
+          <?=View::csrf()?>
+          <input type="hidden" name="bulk_action" value="delete">
+          <div id="bulkBar" class="d-flex gap-2 align-items-center d-none">
+            <span class="small text-muted"><b id="selCount">۰</b> رکورد انتخاب شده</span>
+            <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> حذف انتخاب‌شده‌ها</button>
+            <button type="button" class="btn btn-sm btn-soft" onclick="fuClearSelection()"><i class="bi bi-x"></i> لغو انتخاب</button>
+          </div>
+        </form>
       </div>
 
       <?php
       $hasAny = false;
       foreach($groups as $title=>$w){
-        $rows=DB::select("SELECT f.*, CONCAT(c.first_name,' ',c.last_name) customer_name, c.mobile, c.status customer_status FROM followups f JOIN customers c ON c.id=f.customer_id AND c.deleted_at IS NULL WHERE f.deleted_at IS NULL AND ($w) ORDER BY f.due_date ASC, FIELD(f.priority,'high','normal','low'), f.id DESC LIMIT 500");
+        $rows=DB::select("SELECT f.*, CONCAT(c.first_name,' ',c.last_name) customer_name, c.mobile, c.status customer_status FROM followups f JOIN customers c ON c.id=f.customer_id AND c.deleted_at IS NULL WHERE f.deleted_at IS NULL AND ($w)$nameWhere ORDER BY f.due_date ASC, FIELD(f.priority,'high','normal','low'), f.id DESC LIMIT 500", $qParam);
         if(count($rows)>0) $hasAny = true;
       }
       if(!$hasAny && $filter==='active'){
@@ -607,7 +691,7 @@ if($route==='followups'){
       ?>
 
       <?php foreach($groups as $title=>$w){
-        $rows=DB::select("SELECT f.*, CONCAT(c.first_name,' ',c.last_name) customer_name, c.mobile, c.status customer_status FROM followups f JOIN customers c ON c.id=f.customer_id AND c.deleted_at IS NULL WHERE f.deleted_at IS NULL AND ($w) ORDER BY f.due_date ASC, FIELD(f.priority,'high','normal','low'), f.id DESC LIMIT 500");
+        $rows=DB::select("SELECT f.*, CONCAT(c.first_name,' ',c.last_name) customer_name, c.mobile, c.status customer_status FROM followups f JOIN customers c ON c.id=f.customer_id AND c.deleted_at IS NULL WHERE f.deleted_at IS NULL AND ($w)$nameWhere ORDER BY f.due_date ASC, FIELD(f.priority,'high','normal','low'), f.id DESC LIMIT 500", $qParam);
         $badgeClass = match(true){
           str_contains($title,'معوق')=> 'text-bg-danger',
           $title==='امروز'=> 'text-bg-warning',
@@ -622,13 +706,14 @@ if($route==='followups'){
         </div>
         <div class="table-responsive">
           <table class="table table-hover align-middle mb-0 followup-table">
-            <thead class="table-light"><tr><th style="min-width:110px">تاریخ سررسید</th><th style="min-width:70px">اولویت</th><th style="min-width:140px">مشتری</th><th>موبایل</th><th style="min-width:180px">شرح</th><th>نتیجه قبلی</th><th style="min-width:340px">ثبت نتیجه</th></tr></thead>
+            <thead class="table-light"><tr><th style="width:36px"><input type="checkbox" id="fuCheckAll" title="انتخاب همه"></th><th style="min-width:110px">تاریخ سررسید</th><th style="min-width:70px">اولویت</th><th style="min-width:140px">مشتری</th><th>موبایل</th><th style="min-width:180px">شرح</th><th>نتیجه قبلی</th><th style="min-width:340px">ثبت نتیجه</th></tr></thead>
             <tbody>
             <?php foreach($rows as $r): 
               $isOverdue = ($r['due_date'] < date('Y-m-d') && in_array($r['status'],['pending','requested_later'],true));
               $rowClass = $isOverdue ? 'table-danger-light' : '';
             ?>
             <tr class="<?=e($rowClass)?>">
+              <td><form class="fu-select-form"><?=View::csrf()?><input type="checkbox" class="form-check-input fu-row-check" name="ids[]" form="bulkDeleteForm" value="<?=$r['id']?>"></form></td>
               <td>
                 <?php if($isOverdue): ?><span class="badge text-bg-danger mb-1"><i class="bi bi-exclamation-triangle"></i> معوق</span><br><?php endif; ?>
                 <?=Jalali::toJalali($r['due_date'])?>
@@ -644,7 +729,7 @@ if($route==='followups'){
               <td>
                 <?php if(in_array($r['status'],['pending','requested_later'],true)):?>
                 <form method="post" class="followup-action-form"><?=View::csrf()?><input type="hidden" name="id" value="<?=$r['id']?>"><div class="d-flex flex-wrap gap-1 align-items-center">
-                  <select name="status" class="form-select form-select-sm" style="min-width:130px;width:auto">
+                  <select name="status" class="form-select form-select-sm fu-status-select" style="min-width:130px;width:auto">
                     <option value="contacted">تماس گرفته شد</option>
                     <option value="not_answered">پاسخ نداد</option>
                     <option value="interested">علاقه‌مند</option>
@@ -653,8 +738,10 @@ if($route==='followups'){
                     <option value="refused" class="text-danger">رد کرد</option>
                   </select>
                   <input name="result" class="form-control form-control-sm" placeholder="یادداشت نتیجه..." style="min-width:120px;width:140px">
+                  <input type="number" name="refollow_days" min="1" max="365" class="form-control form-control-sm fu-refollow-days d-none" placeholder="پیگیری مجدد بعد از چند روز؟" style="width:120px" title="خالی = پیگیری مجدد ساخته نشود">
                   <button class="btn btn-sm btn-primary"><i class="bi bi-check-lg"></i> ثبت</button>
                 </div></form>
+                <form method="post" class="mt-1" onsubmit="return confirm('این پیگیری حذف شود؟')"><?=View::csrf()?><input type="hidden" name="bulk_action" value="delete"><input type="hidden" name="ids[]" value="<?=$r['id']?>"><button class="btn btn-sm btn-link text-danger p-0 small"><i class="bi bi-trash"></i> حذف</button></form>
                 <?php else:?>
                 <span class="badge text-bg-<?=($r['status']==='booked'?'success':($r['status']==='refused'?'danger':'info'))?>"><?=e(t($r['status'],$r['status']))?></span>
                 <a href="<?=url('customers.show',['id'=>$r['customer_id']])?>" class="btn btn-sm btn-soft ms-1"><i class="bi bi-eye"></i></a>

@@ -193,4 +193,53 @@ document.addEventListener('DOMContentLoaded', () => {
             if (window.bootstrap) bootstrap.Toast.getOrCreateInstance(t).hide();
         });
     }, 3500);
+
+    // ---------------------------------------------------------------
+    // Followup center: re-followup days input + multi-select + bulk bar
+    // ---------------------------------------------------------------
+    const bulkBar = document.getElementById('bulkBar');
+    const selCount = document.getElementById('selCount');
+    const checkAll = document.getElementById('fuCheckAll');
+
+    function fuUpdateBulkBar() {
+        const boxes = document.querySelectorAll('.fu-row-check');
+        const checked = document.querySelectorAll('.fu-row-check:checked');
+        if (!bulkBar) return;
+        bulkBar.classList.toggle('d-none', checked.length === 0);
+        if (selCount) selCount.textContent = new Intl.NumberFormat('fa-IR').format(checked.length);
+        if (checkAll && boxes.length) {
+            checkAll.checked = checked.length === boxes.length;
+            checkAll.indeterminate = checked.length > 0 && checked.length < boxes.length;
+        }
+    }
+
+    window.fuClearSelection = function () {
+        document.querySelectorAll('.fu-row-check').forEach(cb => { cb.checked = false; });
+        if (checkAll) checkAll.checked = false;
+        fuUpdateBulkBar();
+    };
+
+    document.querySelectorAll('.fu-row-check').forEach(cb => {
+        cb.addEventListener('change', fuUpdateBulkBar);
+    });
+    if (checkAll) {
+        checkAll.addEventListener('change', () => {
+            document.querySelectorAll('.fu-row-check').forEach(cb => { cb.checked = checkAll.checked; });
+            fuUpdateBulkBar();
+        });
+    }
+    fuUpdateBulkBar();
+
+    // Show the "re-followup after N days" input only for non-booked statuses
+    document.querySelectorAll('.followup-action-form').forEach(form => {
+        const select = form.querySelector('.fu-status-select');
+        const days = form.querySelector('.fu-refollow-days');
+        if (!select || !days) return;
+        const sync = () => {
+            days.classList.toggle('d-none', select.value === 'booked');
+            if (select.value === 'booked') days.value = '';
+        };
+        select.addEventListener('change', sync);
+        sync();
+    });
 });
