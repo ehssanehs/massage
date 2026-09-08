@@ -204,6 +204,7 @@ CREATE TABLE IF NOT EXISTS customer_timeline (
   entity_id BIGINT UNSIGNED NULL,
   created_by BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL,
+  deleted_at DATETIME NULL,
   INDEX idx_timeline_customer (customer_id, created_at),
   CONSTRAINT fk_timeline_customer FOREIGN KEY (customer_id) REFERENCES customers(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

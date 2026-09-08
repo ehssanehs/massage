@@ -15,10 +15,10 @@ function expectSame(mixed $expected, mixed $actual, string $message): void {
 
 $schema = RestoreCheckService::expectedSchema();
 expectSame(19, count($schema), 'All application tables, not only configurable modules, are checked');
-expectSame(260, array_sum(array_map('count', $schema)), 'DDL parser includes same-line and backticked columns');
+expectSame(261, array_sum(array_map('count', $schema)), 'DDL parser includes same-line and backticked columns');
 $dateCount = 0;
 foreach ($schema as $columns) $dateCount += count(array_filter($columns, fn($type) => in_array($type, ['date', 'datetime'], true)));
-expectSame(62, $dateCount, 'All DATE/DATETIME fields from the pre-change schema are covered');
+expectSame(63, $dateCount, 'All DATE/DATETIME fields from the pre-change schema are covered');
 $modules = require base_path('config/modules.php');
 foreach ($modules as $module) {
     foreach ($module['fields'] as $column => $definition) {
