@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS appointments (
   start_time TIME NOT NULL,
   end_time TIME NOT NULL,
   status VARCHAR(40) NOT NULL DEFAULT 'pending',
+  deposit_amount DECIMAL(15,2) NOT NULL DEFAULT 0,
   notes TEXT NULL,
   created_by BIGINT UNSIGNED NULL,
   created_at DATETIME NULL, updated_at DATETIME NULL, deleted_at DATETIME NULL,
