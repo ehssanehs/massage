@@ -31,6 +31,7 @@ function rel_label(string $type, int $id): string {
 
 /** Render a field value for the read-only record view. */
 function display_value(string $name, array $f, mixed $value): string {
+    if ($name === 'deposit_amount') return e(\App\Support\AppointmentDeposit::display($value));
     if ($value === null || $value === '') return '<span class="text-muted">—</span>';
     $type = (string)($f[1] ?? 'text');
     if ($type === 'date') return e(Jalali::toJalali((string)$value));
@@ -54,6 +55,7 @@ function display_value(string $name, array $f, mixed $value): string {
 
 /** Render a table cell for module list pages. */
 function cell_value(string $column, mixed $v): string {
+    if ($column === 'deposit_amount') return e(\App\Support\AppointmentDeposit::display($v));
     if ($column === 'birth_date') {
         $date = Jalali::toJalali($v === null ? null : (string)$v);
         return $date !== '' ? '<span class="date-time">' . e($date) . '</span>' : '<span class="text-muted">—</span>';
@@ -76,7 +78,8 @@ function normalize_post(array $fields): array {
         if (!array_key_exists($name, $_POST)) continue;
         $type = $f[1];
         $val = $_POST[$name];
-        if ($type === 'date') $val = is_string($val) ? Jalali::toGregorian($val) : null;
+        if ($name === 'deposit_amount') $val = \App\Support\AppointmentDeposit::normalize($val);
+        elseif ($type === 'date') $val = is_string($val) ? Jalali::toGregorian($val) : null;
         elseif ($type === 'time') $val = is_string($val) ? ClockTime::normalize($val) : null;
         elseif ($type === 'number') $val = Jalali::en((string)$val) === '' ? 0 : Jalali::en((string)$val);
         elseif ($type === 'services_multi') $val = json_encode($val ?: [], JSON_UNESCAPED_UNICODE);
@@ -91,6 +94,10 @@ function validate_fields(array $fields, array $data): array {
     foreach ($fields as $name => $f) {
         // Optional dates and clock times must also be valid when supplied; never silently save NULL.
         $raw = $_POST[$name] ?? '';
+        if ($name === 'deposit_amount') {
+            if (\App\Support\AppointmentDeposit::normalize($raw) === null) $errors[] = 'بیعانه باید مبلغ غیرمنفی با حداکثر ۱۳ رقم صحیح و ۲ رقم اعشار باشد.';
+            if (!\App\Support\AppointmentDeposit::isAvailable()) $errors[] = \App\Support\AppointmentDeposit::UPGRADE_MESSAGE;
+        }
         if ($f[1] === 'date' && (!is_string($raw) || trim($raw) !== '') && ($data[$name] ?? null) === null) {
             $errors[] = $f[0] . ' باید یک تاریخ شمسی معتبر به صورت سال/ماه/روز باشد.';
             continue;
@@ -174,6 +181,10 @@ function input_html(string $name, array $f, mixed $value): string {
         $h .= View::dateInput($name, $v, $required, $id);
     } elseif ($type === 'time') {
         $h .= View::timeInput($name, is_string($value) ? $value : '', $required, $id, $label);
+    } elseif ($name === 'deposit_amount') {
+        $v = is_scalar($value) ? (string)$value : '';
+        $h .= '<input id="' . e($id) . '" type="text" inputmode="decimal" name="deposit_amount" value="' . e($v) . '" class="form-control" dir="ltr" aria-describedby="deposit-help">';
+        $h .= '<div id="deposit-help" class="form-text">مبلغ دریافت‌شده به ریال؛ خالی یا صفر یعنی بدون بیعانه.</div>';
     } elseif ($type === 'number') {
         $v = (string)($value ?? '');
         if ($v !== '' && is_numeric($v)) { $f2 = (float)$v; $v = fmod($f2, 1.0) === 0.0 ? (string)(int)$f2 : (string)$f2; }
@@ -204,7 +215,7 @@ function can_module(string $module, string $action='view'): void {
     Auth::requireCan(($modules[$module]['perm'] ?? $module) . '.' . ($action === 'view' ? 'view' : 'manage')); 
 }
 /** Build data/count queries from exactly the same joins, scope, and search predicate. */
-function list_sql(string $module, array $def, SearchQuery $search, ?BirthMonth $birthMonth = null): array {
+function list_sql(string $module, array $def, SearchQuery $search, ?BirthMonth $birthMonth = null, array $extraWhere = []): array {
     $table = $def['table'];
     $select = "$table.*";
     $join = '';
@@ -242,6 +253,7 @@ function list_sql(string $module, array $def, SearchQuery $search, ?BirthMonth $
     $numericKeys = array_keys(array_filter($searchFields, static fn($entry) => $entry[1]));
     [$predicate, $params] = $search->predicate($fields, $numericKeys);
     $where = "$table.deleted_at IS NULL" . ($predicate !== '' ? " AND $predicate" : '');
+    foreach ($extraWhere as $predicateSql) $where .= " AND $predicateSql";
     if ($module === 'customers' && $birthMonth !== null) {
         [$birthPredicate, $birthParams] = $birthMonth->predicate();
         if ($birthPredicate !== '') $where .= " AND $birthPredicate";
@@ -258,7 +270,15 @@ function render_module_list(string $module): string {
     $search = SearchQuery::fromInput($_GET['q'] ?? null);
     $q = $search->value;
     $birthMonth = $module === 'customers' ? new BirthMonth($_GET) : null;
+    // Appointments: optional "has deposit" filter (بیعانه‌دار).
+    $depositFilter = false;
+    if ($module === 'appointments') {
+        $raw = $_GET['deposit'] ?? '';
+        $depositFilter = is_string($raw) && in_array(trim($raw), ['1', 'yes', 'true'], true);
+    }
+    $extraWhere = $depositFilter ? ["appointments.deposit_amount > 0"] : [];
     $errors = array_merge($search->error === null ? [] : [$search->error], $birthMonth?->errors ?? []);
+    if ($depositFilter && !\App\Support\AppointmentDeposit::isAvailable()) $errors[] = \App\Support\AppointmentDeposit::UPGRADE_MESSAGE;
     $hasBirthFilter = $birthMonth?->hasInput() ?? false;
     $pageValue = $_GET['page'] ?? '1';
     $page = is_scalar($pageValue) ? max(1, (int)Jalali::en((string)$pageValue)) : 1;
@@ -267,7 +287,7 @@ function render_module_list(string $module): string {
     $total = 0;
     $pages = 1;
     if (!$errors) {
-        [$sql, $params, $countSql] = list_sql($module, $def, $search, $birthMonth);
+        [$sql, $params, $countSql] = list_sql($module, $def, $search, $birthMonth, $extraWhere);
         $total = (int)DB::value($countSql, $params);
         $pages = max(1, (int)ceil($total / $per));
         // A stale page number must not make an otherwise successful search empty.
@@ -298,7 +318,13 @@ function render_module_list(string $module): string {
       <div class="customer-filter-actions">
       <?php endif; ?>
       <button class="btn btn-soft">جستجو</button>
-      <?php if ($q !== '' || $errors || $hasBirthFilter): ?><a class="btn btn-soft" href="<?=e(url($module))?>"><?=$hasBirthFilter ? 'پاک‌کردن فیلترها' : 'پاک‌کردن جستجو'?></a><?php endif; ?>
+      <?php if ($module === 'appointments'): ?>
+      <label class="form-check form-check-inline mb-0" for="f_deposit">
+        <input id="f_deposit" class="form-check-input" type="checkbox" name="deposit" value="1"<?=$depositFilter ? ' checked' : ''?>>
+        <span class="form-check-label">فقط نوبت‌های بیعانه‌دار</span>
+      </label>
+      <?php endif; ?>
+      <?php if ($q !== '' || $errors || $hasBirthFilter || $depositFilter): ?><a class="btn btn-soft" href="<?=e(url($module))?>"><?=$hasBirthFilter || $depositFilter ? 'پاک‌کردن فیلترها' : 'پاک‌کردن جستجو'?></a><?php endif; ?>
       <?php if ($birthMonth !== null): ?></div><?php endif; ?>
     </form>
     <?php if(Auth::can($def['perm'].'.manage')): ?><a class="btn btn-primary" href="<?=url($module.'.create')?>"><i class="bi bi-plus-lg"></i> افزودن</a><?php endif; ?>
@@ -308,7 +334,7 @@ function render_module_list(string $module): string {
     <?php if(!$rows): ?><tr><td colspan="20" class="empty">رکوردی یافت نشد.</td></tr><?php endif;?>
   </tbody></table></div>
   <div class="small text-muted">تعداد: <?=Jalali::fa($total)?></div>
-  <?=render_pager($module, $page, $pages, $q, $birthMonth?->queryParameters() ?? [])?>
+  <?=render_pager($module, $page, $pages, $q, array_merge($birthMonth?->queryParameters() ?? [], $depositFilter ? ['deposit' => '1'] : []))?>
 </div>
 <?php return (string)ob_get_clean(); }
 

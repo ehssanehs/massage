@@ -30,6 +30,11 @@ branches, roles, users, settings, customers, services, therapists, appointments,
 - ماژول جدید = جدول + تعریف در config/modules.php (+ اختیاری سرویس در app/Services).
 - تست‌ها: `php tests/*.php` و `node --test tests/*.test.js` (نیاز PHP 8.2 + pdo_sqlite + Node 18؛ Playwright اختیاری).
 
+## بیعانه نوبت‌ها
+- `app/Support/AppointmentDeposit.php`: نرمال‌سازی دقیق مبلغ غیرمنفی و تشخیص وجود ستون در بکاپ قدیمی.
+- `appointments.deposit_amount`، migration 004؛ فرم/نمایش/ستون لیست و فیلتر `deposit=1` در public/index.php.
+- تست‌ها: `deposit-routes.test.js`، `deposit.php`، `deposit-http.py` (HTTP/MySQL واقعی روی دیتابیس‌های موقت).
+
 ## وضعیت اجرا روی این سرور
 - کلون در `/root/massage`.
 - سرور آماده: PHP 8.2.33 (fpm/cli + pdo_mysql/sqlite, mbstring, curl, xml, zip)، MySQL 8.0.46.

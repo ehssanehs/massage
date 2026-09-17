@@ -1,5 +1,11 @@
 # تست‌های جستجو، تاریخ، ساعت و سازگاری بازیابی
 
+## تست بیعانه
+
+- `deposit-routes.test.js`: فرم/ستون/فیلتر، عدم autofill، رد مبلغ نامعتبر و ذخیره دقیق ارقام فارسی.
+- `deposit.php`: اسکیمای DECIMAL، صفر پیش‌فرض و ذخیره مبلغ؛ فقط روی دیتابیس آزمایشی.
+- `deposit-http.py`: نیازمند Python 3، PHP و دسترسی مدیریتی محلی mysql. دو دیتابیس موقت با نام یکتا می‌سازد و در پایان حذف می‌کند؛ `.env` اصلی تغییر نمی‌کند. روی بکاپ پایه ثابت `6e3acf8` **پیش از migrate** صفحات و منع ذخیره ناقص را می‌آزماید، سپس دو بار migrate و کنترل داده‌های قدیمی. نصب تازه، ثبت/ویرایش HTTP و تأیید مبلغ/فیلتر با SQL نیز اجرا می‌شود. تست اعتبار و پیگیری هم روی همین دیتابیس‌های موقت اجرا می‌شوند.
+
 ## تست‌های اصلی
 
 نیازمند PHP 8.2+ با mbstring و Node.js 18+. تست‌های SQL جستجو همچنین به افزونهٔ **pdo_sqlite** نیاز دارند (مثلاً پکیج `php8.2-sqlite3`؛ وابستگی تست است، نه اجرای سامانه):
@@ -13,6 +19,8 @@ php tests/followup.php
 php tests/restore-check.php
 DB_DATABASE=massage_test DB_USERNAME=... DB_PASSWORD=... php tests/credit.php
 DB_DATABASE=massage_test DB_USERNAME=... DB_PASSWORD=... php tests/followup.php
+DB_DATABASE=massage_test php tests/deposit.php
+python3 tests/deposit-http.py
 node --test tests/*.test.js
 ```
 
