@@ -7,15 +7,16 @@
 
 ## معماری
 - **Core:** `DB` (PDO singleton، insert/update عمومی)، `Auth` (session، RBAC با role+permissions JSON، super_admin=* )، `Security` (CSRF، rate limit، cleanString).
-- **Services:** `Audit` (audit_logs)، `FollowUpService` (تولید پیگیری از جلسات)، `SalaryService` (حقوق/پورسانت)، `RetentionService` (RFM)، `BackupService` (mysqldump)، `RestoreCheckService`، `Notification`، `PaymentMethods` (لیست روش‌های پرداخت در جدول settings)، `Credit` (کیف اعتبار مشتری: لجر credit_transactions + موجودی customers.credit_balance + درصد credit_earn_percent).
+- **Services:** `Audit` (audit_logs)، `FollowUpService` (تولید پیگیری از جلسات)، `SalaryService` (حقوق/پورسانت و جایگزینی پورسانت عادی با نرخ ثبت‌شدهٔ جلسهٔ مشتری عرب)، `ArabCommission` (اعتبارسنجی درصد و ثبت نرخ زمان جلسه)، `RetentionService` (RFM)، `BackupService` (mysqldump)، `RestoreCheckService`، `Notification`، `PaymentMethods` (لیست روش‌های پرداخت در جدول settings)، `Credit` (کیف اعتبار مشتری: لجر credit_transactions + موجودی customers.credit_balance + درصد credit_earn_percent).
 - **Support:** `View` (layout RTL، dateInput/timeInput جلالی)، `Jalali` (تبدیل شمسی/میلادی، دوره ۳۳ساله خیام)، `DateRange`، `ClockTime` (نرمال‌سازی ساعت ۲۴ساعته)، `SearchQuery` (نرمال‌سازی فارسی: ی/ي، ک/ك، ارقام، اعراب؛ AND چندواژه‌ای)، `BirthMonth` (فیلتر ماه تولد شمسی ۱-۱۲ بدون سال).
 - **UI assets:** jalalidatepicker + timepicker محلی (بدون CDN برای این دو)، app.js.
 
 ## روتر (public/index.php ~865 خط)
 - ماژول‌های CRUD دیتابیس‌محور از `config/modules.php`: customers, services, therapists, appointments, sessions (massage_sessions), expenses, inventory, packages, campaigns — هر کدام index/create/edit/show/delete با soft delete (deleted_at).
-- صفحات اختصاصی: dashboard (آمار + هشدار انبار + نمودار درآمد ۳۰روزه api.revenue)، followups (گروه‌بندی معوق/امروز/آینده + ثبت نتیجه و ویرایش وضعیت/متن نتیجهٔ پیگیری انجام‌شده)، retention (RFM)، finance/reports (DateRange + export.csv با BOM)، salaries، users (RBAC)، settings (برندینگ/لوگو/روش‌های پرداخت)، backup، audit.
+- صفحات اختصاصی: dashboard (آمار + هشدار انبار + نمودار درآمد ۳۰روزه api.revenue)، followups (گروه‌بندی معوق/امروز/آینده + ثبت نتیجه و ویرایش وضعیت/متن نتیجهٔ پیگیری انجام‌شده)، retention (RFM)، finance/reports (DateRange + export.csv با BOM)، salaries (تفکیک پورسانت عادی/عرب)، users (RBAC)، settings (برندینگ/لوگو/روش‌های پرداخت + درصد مشتری عرب)، backup، audit.
 - منطق خاص: `check_double_booking` (تداخل نوبت درمانگر)، `after_save` (تایم‌لاین + پیگیری خودکار جلسه completed)، `list_sql` (JOIN+search مشترک برای ردیف/COUNT)، autofill قیمت از data-price خدمت.
 - حساب پیش‌فرض لاگین روی فرم هاردکد شده (admin@example.com/password در value) — نکته امنیتی.
+- مشتری با `customers.is_arab_customer` مشخص می‌شود؛ `settings.arab_customer_commission_percent` درصد مبلغ نهایی جلسه (۰ تا ۱۰۰، حداکثر دو رقم اعشار) است. هنگام ثبت جلسه، درصد همان زمان در `massage_sessions.arab_commission_percent` ذخیره می‌شود (`NULL` = پورسانت عادی؛ صفر = مشتری عرب با نرخ صفر). محاسبهٔ حقوق، فقط برای جلسات معمولی مدل پورسانت درمانگر را اعمال می‌کند و برای جلسات عرب درصد ثبت‌شده را جایگزین می‌سازد؛ حقوق پایه طبق مدل قبلی محفوظ است. تغییر بعدی تنظیمات/برچسب مشتری، جلسات قدیمی را تغییر نمی‌دهد؛ تغییر مشتریِ خود جلسه، نرخ جدید را اعمال می‌کند. قبل از استفاده روی نصب قدیمی `php bin/console migrate` الزامی است.
 
 ## دیتابیس (database/schema.sql — 15 جدول)
 branches, roles, users, settings, customers, services, therapists, appointments, massage_sessions, followups, customer_timeline, expenses, salary_runs, customer_packages, inventory_items, inventory_movements, campaigns, audit_logs.

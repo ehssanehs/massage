@@ -15,7 +15,9 @@ function expectSame(mixed $expected, mixed $actual, string $message): void {
 
 $schema = RestoreCheckService::expectedSchema();
 expectSame(19, count($schema), 'All application tables, not only configurable modules, are checked');
-expectSame(262, array_sum(array_map('count', $schema)), 'DDL parser includes same-line and backticked columns');
+expectSame(264, array_sum(array_map('count', $schema)), 'DDL parser includes same-line and backticked columns');
+expectSame('tinyint', $schema['customers']['is_arab_customer'] ?? null, 'Arab customer flag is part of restore schema');
+expectSame('decimal', $schema['massage_sessions']['arab_commission_percent'] ?? null, 'Session Arab commission snapshot is part of restore schema');
 $dateCount = 0;
 foreach ($schema as $columns) $dateCount += count(array_filter($columns, fn($type) => in_array($type, ['date', 'datetime'], true)));
 expectSame(63, $dateCount, 'All DATE/DATETIME fields from the pre-change schema are covered');
@@ -97,6 +99,19 @@ expectSame(false, $missing['ok'], 'Older/incomplete schema is not declared compa
 expectSame(3, count($missing['schema_issues']), 'Missing non-date columns are checked as well');
 expectSame('missing_table', $missing['schema_issues'][2]['reason'], 'Missing table explicitly identified');
 expectSame(false, (bool)array_filter($queries, fn($q) => str_contains($q['sql'], 'FROM `followups`')), 'Never query a missing table');
+
+// An older restore lacking only the new fields must report both gaps without touching data.
+$preArabMetadata = array_values(array_filter($metadata, fn($c) => !(
+    ($c['TABLE_NAME'] === 'customers' && $c['COLUMN_NAME'] === 'is_arab_customer')
+    || ($c['TABLE_NAME'] === 'massage_sessions' && $c['COLUMN_NAME'] === 'arab_commission_percent')
+)));
+$queries = [];
+$preArabReport = RestoreCheckService::inspect(selector($preArabMetadata, $records, $queries));
+expectSame(false, $preArabReport['ok'], 'Pre-Arab-commission backups need migration');
+expectSame([
+    ['table'=>'customers', 'column'=>'is_arab_customer', 'reason'=>'missing_column'],
+    ['table'=>'massage_sessions', 'column'=>'arab_commission_percent', 'reason'=>'missing_column'],
+], $preArabReport['schema_issues'], 'Only the two new columns are missing from a pre-change backup');
 
 $missingKey = $metadata;
 foreach ($missingKey as &$column) {
