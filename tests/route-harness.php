@@ -72,10 +72,18 @@ namespace App\Core {
                 $statement->execute($params);
                 return $statement->fetchColumn();
             }
-            if (str_contains($sql, 'FROM settings')) return match ($params[0] ?? '') {
+            if (stripos($sql, 'information_schema.COLUMNS') !== false && array_key_exists('schema_columns', self::$fixtures)) {
+                if (preg_match("/TABLE_NAME='([^']+)' AND COLUMN_NAME='([^']+)'/", $sql, $column)) return self::$fixtures['schema_columns'][$column[1] . '.' . $column[2]] ?? 0;
+            }
+            if (str_contains($sql, 'FROM settings')) {
+                $settings = self::$fixtures['settings'] ?? [];
+                if (array_key_exists($params[0] ?? '', $settings)) return $settings[$params[0]];
+                return match ($params[0] ?? '') {
                 'brand_name'=>'سامانه آزمایشی', 'primary_color'=>'#7c3aed', 'secondary_color'=>'#14b8a6', 'default_theme'=>'light', default=>null,
-            };
+                };
+            }
             if (str_contains($sql, 'followup_interval_days')) return 30;
+            if (str_contains($sql, 'SELECT is_arab_customer FROM customers')) return self::$fixtures['customers']['is_arab_customer'] ?? 0;
             if (str_contains($sql, 'credit_balance')) {
                 $fixture = self::$fixtures['customers'] ?? [];
                 if (is_array($fixture) && array_key_exists('credit_balance', $fixture)) return $fixture['credit_balance'];

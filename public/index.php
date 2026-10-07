@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/../app/bootstrap.php';
 
-use App\Core\Auth; use App\Core\DB; use App\Core\Security; use App\Support\View; use App\Support\Jalali; use App\Support\DateRange; use App\Support\ClockTime; use App\Support\SearchQuery; use App\Support\BirthMonth; use App\Services\Audit; use App\Services\FollowUpService; use App\Services\SalaryService; use App\Services\RetentionService; use App\Services\BackupService; use App\Services\PaymentMethods; use App\Services\Credit;
+use App\Core\Auth; use App\Core\DB; use App\Core\Security; use App\Support\View; use App\Support\Jalali; use App\Support\DateRange; use App\Support\ClockTime; use App\Support\SearchQuery; use App\Support\BirthMonth; use App\Services\Audit; use App\Services\FollowUpService; use App\Services\SalaryService; use App\Services\ArabCommission; use App\Services\RetentionService; use App\Services\BackupService; use App\Services\PaymentMethods; use App\Services\Credit;
 
 Security::verifyCsrf();
 $modules = require base_path('config/modules.php');
@@ -32,8 +32,9 @@ function rel_label(string $type, int $id): string {
 /** Render a field value for the read-only record view. */
 function display_value(string $name, array $f, mixed $value): string {
     if ($name === 'deposit_amount') return e(\App\Support\AppointmentDeposit::display($value));
-    if ($value === null || $value === '') return '<span class="text-muted">—</span>';
     $type = (string)($f[1] ?? 'text');
+    if ($type === 'checkbox') return !empty($value) ? 'بله' : 'خیر';
+    if ($value === null || $value === '') return '<span class="text-muted">—</span>';
     if ($type === 'date') return e(Jalali::toJalali((string)$value));
     if ($type === 'time') return '<span class="date-time">' . e(ClockTime::display((string)$value)) . '</span>';
     if ($type === 'select') { $opts = is_array($f[2] ?? null) ? $f[2] : []; $v = (string)$value; return e((string)($opts[$v] ?? t($v, $v))); }
@@ -75,9 +76,9 @@ function cell_value(string $column, mixed $v): string {
 function normalize_post(array $fields): array {
     $data = [];
     foreach ($fields as $name => $f) {
-        if (!array_key_exists($name, $_POST)) continue;
+        if (!array_key_exists($name, $_POST) && $f[1] !== 'checkbox') continue;
         $type = $f[1];
-        $val = $_POST[$name];
+        $val = $type === 'checkbox' ? (($_POST[$name] ?? null) === '1' ? 1 : 0) : $_POST[$name];
         if ($name === 'deposit_amount') $val = \App\Support\AppointmentDeposit::normalize($val);
         elseif ($type === 'date') $val = is_string($val) ? Jalali::toGregorian($val) : null;
         elseif ($type === 'time') $val = is_string($val) ? ClockTime::normalize($val) : null;
@@ -94,6 +95,8 @@ function validate_fields(array $fields, array $data): array {
     foreach ($fields as $name => $f) {
         // Optional dates and clock times must also be valid when supplied; never silently save NULL.
         $raw = $_POST[$name] ?? '';
+        if ($f[1] === 'checkbox' && array_key_exists($name, $_POST) && $_POST[$name] !== '1') $errors[] = $f[0] . ' نامعتبر است.';
+        if ($name === 'is_arab_customer' && !ArabCommission::hasCustomerColumn()) $errors[] = ArabCommission::UPGRADE_MESSAGE;
         if ($name === 'deposit_amount') {
             if (\App\Support\AppointmentDeposit::normalize($raw) === null) $errors[] = 'بیعانه باید مبلغ غیرمنفی با حداکثر ۱۳ رقم صحیح و ۲ رقم اعشار باشد.';
             if (!\App\Support\AppointmentDeposit::isAvailable()) $errors[] = \App\Support\AppointmentDeposit::UPGRADE_MESSAGE;
@@ -129,7 +132,9 @@ function input_html(string $name, array $f, mixed $value): string {
     if ($submitted) $value = $_POST[$name];
     $id = 'f_' . $name;
     $h = '<label class="form-label" for="' . e($id) . '">' . e($label) . ($required ? ' <span class="text-danger">*</span>' : '') . '</label>';
-    if ($type === 'textarea') {
+    if ($type === 'checkbox') {
+        $h = '<div class="form-check mt-4"><input id="' . e($id) . '" type="checkbox" name="' . e($name) . '" value="1" class="form-check-input"' . (!empty($value) ? ' checked' : '') . '><label class="form-check-label" for="' . e($id) . '">' . e($label) . '</label></div>';
+    } elseif ($type === 'textarea') {
         $h .= '<textarea id="' . e($id) . '" name="' . e($name) . '" class="form-control" rows="3"' . $req . '>' . e((string)($value ?? '')) . '</textarea>';
     } elseif ($type === 'select') {
         $opts = is_array($f[2] ?? null) ? $f[2] : [];
@@ -371,7 +376,7 @@ function render_module_list(string $module): string {
 <?php return (string)ob_get_clean(); }
 
 function render_pager(string $module, int $page, int $pages, ?string $q, array $filters = []): string { if($pages<=1) return ''; $mk=function(int $p) use ($module,$q,$filters){ $params=$filters; if($q!==null&&$q!=='')$params['q']=$q; if($p>1)$params['page']=$p; return url($module,$params); }; $h='<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center mb-0">'; $h.='<li class="page-item '.($page<=1?'disabled':'').'"><a class="page-link" href="'.e($mk($page-1)).'">قبلی</a></li>'; $start=max(1,$page-2); $end=min($pages,$page+2); for($p=$start;$p<=$end;$p++){ $h.='<li class="page-item '.($p===$page?'active':'').'"><a class="page-link" href="'.e($mk($p)).'">'.Jalali::fa($p).'</a></li>'; } $h.='<li class="page-item '.($page>=$pages?'disabled':'').'"><a class="page-link" href="'.e($mk($page+1)).'">بعدی</a></li></ul></nav>'; return $h; }
-function module_form(string $module, ?int $id=null, array $errors=[]): string { global $modules; $def=$modules[$module]; $row=$id?DB::row('SELECT * FROM '.$def['table'].' WHERE id=?',[$id]):[]; ob_start(); if($errors) echo '<div class="alert alert-danger">'.implode('<br>',array_map('e',$errors)).'</div>'; ?><form method="post" class="card p-4"><?=View::csrf()?><div class="row g-3"><?php foreach($def['fields'] as $n=>$f): ?><div class="col-md-6 <?=($f[1]==='textarea'||$f[1]==='services_multi')?'col-lg-12':''?>"><?=input_html($n,$f,$row[$n] ?? null)?></div><?php endforeach;?></div><div class="mt-4 d-flex gap-2"><button class="btn btn-primary">ذخیره</button><a class="btn btn-soft" href="<?=url($module)?>">انصراف</a></div></form><?php return (string)ob_get_clean(); }
+function module_form(string $module, ?int $id=null, array $errors=[]): string { global $modules; $def=$modules[$module]; $row=$id?DB::row('SELECT * FROM '.$def['table'].' WHERE id=?',[$id]):[]; ob_start(); if($errors) echo '<div class="alert alert-danger">'.implode('<br>',array_map('e',$errors)).'</div>'; ?><form method="post" class="card p-4"><?=View::csrf()?><div class="row g-3"><?php foreach($def['fields'] as $n=>$f): ?><div class="col-md-6 <?=($f[1]==='textarea'||$f[1]==='services_multi')?'col-lg-12':''?>"><?=input_html($n,$f,$errors && $f[1]==='checkbox' ? (($_POST[$n]??null)==='1' ? 1 : 0) : ($row[$n] ?? null))?></div><?php endforeach;?></div><div class="mt-4 d-flex gap-2"><button class="btn btn-primary">ذخیره</button><a class="btn btn-soft" href="<?=url($module)?>">انصراف</a></div></form><?php return (string)ob_get_clean(); }
 /** Virtual form-only fields handled by services, not persisted as columns. */
 function virtual_fields(string $module): array {
     global $modules;
@@ -382,7 +387,20 @@ function virtual_fields(string $module): array {
     return $out;
 }
 
-function handle_module(string $module, string $action): void { global $modules; $def=$modules[$module]; $table=$def['table']; if($action==='index') echo View::render($def['title'], render_module_list($module)); elseif($action==='create'){ can_module($module,'manage'); if($_SERVER['REQUEST_METHOD']==='POST'){ $data=normalize_post($def['fields']); $creditUsed=0.0; foreach(virtual_fields($module) as $vf){ if(array_key_exists($vf,$data)) $creditUsed=(float)$data[$vf]; unset($data[$vf]); } $errors=validate_fields($def['fields'],$data); if($module==='appointments') $errors=array_merge($errors, check_double_booking($data)); if(!$errors && in_array('credit_used',virtual_fields($module),true) && !Credit::isAvailable()) $errors[]='جدول اعتبار مشتری روی این دیتابیس نصب نشده است؛ ابتدا «php bin/console migrate» را اجرا کنید.'; if(!$errors){ if($module==='customers') {$data['customer_code']='C'.date('ymd').random_int(100,999); $data['registration_date']=date('Y-m-d');} $data['created_by']=Auth::id(); $data['created_at']=date('Y-m-d H:i:s'); $id=DB::insert($table,$data); after_save($module,$id,$data,true); if(in_array('credit_used',virtual_fields($module),true)) Credit::applyForRecord($table,$id,$data+['credit_used'=>$creditUsed]); Audit::log($module.'.create',$table,$id); toast('رکورد با موفقیت ایجاد شد.'); redirect($module.'.show',['id'=>$id]); } echo View::render('افزودن '.$def['title'], module_form($module,null,$errors)); } else echo View::render('افزودن '.$def['title'], module_form($module)); } elseif($action==='edit'){ can_module($module,'manage'); $id=(int)($_GET['id']??0); if(!record_exists($table,$id)){ toast('رکورد مورد نظر یافت نشد یا حذف شده است.'); redirect($module); } if($_SERVER['REQUEST_METHOD']==='POST'){ $data=normalize_post($def['fields']); $creditUsed=0.0; foreach(virtual_fields($module) as $vf){ if(array_key_exists($vf,$data)) $creditUsed=(float)$data[$vf]; unset($data[$vf]); } $errors=validate_fields($def['fields'],$data); if($module==='appointments') $errors=array_merge($errors, check_double_booking($data,$id)); if(!$errors && in_array('credit_used',virtual_fields($module),true) && !Credit::isAvailable()) $errors[]='جدول اعتبار مشتری روی این دیتابیس نصب نشده است؛ ابتدا «php bin/console migrate» را اجرا کنید.'; if(!$errors){ $data['updated_at']=date('Y-m-d H:i:s'); DB::update($table,$data,'id=:id',['id'=>$id]); after_save($module,$id,$data,false); if(in_array('credit_used',virtual_fields($module),true)) Credit::applyForRecord($table,$id,$data+['credit_used'=>$creditUsed]); Audit::log($module.'.update',$table,$id); toast('رکورد بروزرسانی شد.'); redirect($module.'.show',['id'=>$id]); } echo View::render('ویرایش '.$def['title'], module_form($module,$id,$errors)); } else echo View::render('ویرایش '.$def['title'], module_form($module,$id)); } elseif($action==='delete'){ can_module($module,'manage'); $delId=(int)($_GET['id']??0); if($delId>0){ if(in_array('credit_used',virtual_fields($module),true)) Credit::reverseFor($table,$delId); DB::exec("UPDATE $table SET deleted_at=NOW() WHERE id=?",[$delId]); Audit::log($module.'.delete',$table,$delId); toast('رکورد حذف شد.'); } redirect($module); } elseif($action==='show'){ can_module($module); echo View::render($def['title'], show_record($module,(int)($_GET['id']??0))); } }
+function session_commission_snapshot(array &$data, ?int $sessionId = null): ?string {
+    $customerId=(int)($data['customer_id']??0);
+    if($customerId<=0) return null;
+    if($sessionId && ArabCommission::hasSessionColumn()) {
+        $old=DB::row('SELECT customer_id FROM massage_sessions WHERE id=? AND deleted_at IS NULL',[$sessionId]);
+        if($old && (int)$old['customer_id']===$customerId) return null; // Preserve the original rate.
+    }
+    try {
+        $snapshot=ArabCommission::snapshotForCustomer($customerId);
+        if(ArabCommission::hasSessionColumn()) $data['arab_commission_percent']=$snapshot;
+        return null;
+    } catch(\RuntimeException $e) { return $e->getMessage(); }
+}
+function handle_module(string $module, string $action): void { global $modules; $def=$modules[$module]; $table=$def['table']; if($action==='index') echo View::render($def['title'], render_module_list($module)); elseif($action==='create'){ can_module($module,'manage'); if($_SERVER['REQUEST_METHOD']==='POST'){ $data=normalize_post($def['fields']); $creditUsed=0.0; foreach(virtual_fields($module) as $vf){ if(array_key_exists($vf,$data)) $creditUsed=(float)$data[$vf]; unset($data[$vf]); } $errors=validate_fields($def['fields'],$data); if($module==='appointments') $errors=array_merge($errors, check_double_booking($data)); if(!$errors && in_array('credit_used',virtual_fields($module),true) && !Credit::isAvailable()) $errors[]='جدول اعتبار مشتری روی این دیتابیس نصب نشده است؛ ابتدا «php bin/console migrate» را اجرا کنید.'; if(!$errors && $module==='sessions' && ($error=session_commission_snapshot($data))!==null) $errors[]=$error; if(!$errors){ if($module==='customers') {$data['customer_code']='C'.date('ymd').random_int(100,999); $data['registration_date']=date('Y-m-d');} $data['created_by']=Auth::id(); $data['created_at']=date('Y-m-d H:i:s'); $id=DB::insert($table,$data); after_save($module,$id,$data,true); if(in_array('credit_used',virtual_fields($module),true)) Credit::applyForRecord($table,$id,$data+['credit_used'=>$creditUsed]); Audit::log($module.'.create',$table,$id); toast('رکورد با موفقیت ایجاد شد.'); redirect($module.'.show',['id'=>$id]); } echo View::render('افزودن '.$def['title'], module_form($module,null,$errors)); } else echo View::render('افزودن '.$def['title'], module_form($module)); } elseif($action==='edit'){ can_module($module,'manage'); $id=(int)($_GET['id']??0); if(!record_exists($table,$id)){ toast('رکورد مورد نظر یافت نشد یا حذف شده است.'); redirect($module); } if($_SERVER['REQUEST_METHOD']==='POST'){ $data=normalize_post($def['fields']); $creditUsed=0.0; foreach(virtual_fields($module) as $vf){ if(array_key_exists($vf,$data)) $creditUsed=(float)$data[$vf]; unset($data[$vf]); } $errors=validate_fields($def['fields'],$data); if($module==='appointments') $errors=array_merge($errors, check_double_booking($data,$id)); if(!$errors && in_array('credit_used',virtual_fields($module),true) && !Credit::isAvailable()) $errors[]='جدول اعتبار مشتری روی این دیتابیس نصب نشده است؛ ابتدا «php bin/console migrate» را اجرا کنید.'; if(!$errors && $module==='sessions' && ($error=session_commission_snapshot($data,$id))!==null) $errors[]=$error; if(!$errors){ $data['updated_at']=date('Y-m-d H:i:s'); DB::update($table,$data,'id=:id',['id'=>$id]); after_save($module,$id,$data,false); if(in_array('credit_used',virtual_fields($module),true)) Credit::applyForRecord($table,$id,$data+['credit_used'=>$creditUsed]); Audit::log($module.'.update',$table,$id); toast('رکورد بروزرسانی شد.'); redirect($module.'.show',['id'=>$id]); } echo View::render('ویرایش '.$def['title'], module_form($module,$id,$errors)); } else echo View::render('ویرایش '.$def['title'], module_form($module,$id)); } elseif($action==='delete'){ can_module($module,'manage'); $delId=(int)($_GET['id']??0); if($delId>0){ if(in_array('credit_used',virtual_fields($module),true)) Credit::reverseFor($table,$delId); DB::exec("UPDATE $table SET deleted_at=NOW() WHERE id=?",[$delId]); Audit::log($module.'.delete',$table,$delId); toast('رکورد حذف شد.'); } redirect($module); } elseif($action==='show'){ can_module($module); echo View::render($def['title'], show_record($module,(int)($_GET['id']??0))); } }
 function record_exists(string $table, int $id): bool { return $id>0 && (bool)DB::value("SELECT id FROM `$table` WHERE id=? AND deleted_at IS NULL LIMIT 1",[$id]); }
 function check_double_booking(array $data, int $ignoreId=0): array { if(empty($data['therapist_id'])||empty($data['appointment_date'])||empty($data['start_time'])||empty($data['end_time'])) return []; $row=DB::row("SELECT id FROM appointments WHERE therapist_id=? AND appointment_date=? AND status NOT IN ('cancelled','no_show') AND id<>? AND (start_time < ? AND end_time > ?) LIMIT 1",[$data['therapist_id'],$data['appointment_date'],$ignoreId,$data['end_time'],$data['start_time']]); return $row?['این درمانگر در بازه زمانی انتخاب‌شده نوبت دیگری دارد.']:[]; }
 function after_save(string $module, int $id, array $data, bool $new): void { if($module==='sessions' && (($data['status']??'completed')==='completed')){ FollowUpService::createForSession($id); DB::insert('customer_timeline',['customer_id'=>$data['customer_id'],'type'=>'session','title'=>'ثبت جلسه ماساژ','body'=>'مبلغ: '.($data['final_amount']??0),'entity'=>'massage_sessions','entity_id'=>$id,'created_at'=>date('Y-m-d H:i:s')]); } if($module==='customers' && $new) DB::insert('customer_timeline',['customer_id'=>$id,'type'=>'registration','title'=>'ثبت‌نام مشتری','body'=>'پرونده مشتری ایجاد شد','created_at'=>date('Y-m-d H:i:s')]); }
@@ -933,7 +951,9 @@ if ($route === 'salaries') {
       <div class="col"><div class="stat"><span>جلسات</span><b><?=Jalali::fa($calc['session_count'])?></b></div></div>
       <div class="col"><div class="stat"><span>فروش</span><b><?=money($calc['gross'])?></b></div></div>
       <div class="col"><div class="stat"><span>حقوق پایه</span><b><?=money($calc['base_salary'])?></b></div></div>
-      <div class="col"><div class="stat"><span>پورسانت</span><b><?=money($calc['commission'])?></b></div></div>
+      <div class="col"><div class="stat"><span>پورسانت معمولی</span><b><?=money($calc['ordinary_commission'])?></b></div></div>
+      <div class="col"><div class="stat"><span>پورسانت مشتری عرب</span><b><?=money($calc['arab_commission'])?></b></div></div>
+      <div class="col"><div class="stat"><span>جمع پورسانت</span><b><?=money($calc['commission'])?></b></div></div>
       <div class="col"><div class="stat"><span>قابل پرداخت</span><b><?=money($calc['payable'])?></b></div></div>
     </div></div>
     <?php endif;
@@ -1008,6 +1028,11 @@ if($route==='settings'){
             $pmError = $e->getMessage();
         }
     } elseif($_SERVER['REQUEST_METHOD']==='POST'){
+        $rawPercent=$_POST['settings'][ArabCommission::SETTING]??null;
+        $percent=ArabCommission::percent($rawPercent);
+        if($percent===null){
+            $settingsError='درصد مشتری عرب باید عدد معتبر بین ۰ تا ۱۰۰ با حداکثر دو رقم اعشار باشد.';
+        } else {
         // Handle logo upload
         if(!empty($_FILES['logo_file']['tmp_name'])){
             $f=$_FILES['logo_file'];
@@ -1037,8 +1062,9 @@ if($route==='settings'){
                 DB::exec('INSERT INTO settings (`key`,`value`) VALUES (?,?) ON DUPLICATE KEY UPDATE value=VALUES(value)',['favicon_path',asset($dest)]);
             }
         }
-        foreach($_POST['settings']??[] as $k=>$v){ DB::exec('INSERT INTO settings (`key`,`value`) VALUES (?,?) ON DUPLICATE KEY UPDATE value=VALUES(value)',[$k,$v]); }
+        foreach($_POST['settings']??[] as $k=>$v){ if($k===ArabCommission::SETTING) $v=$percent; DB::exec('INSERT INTO settings (`key`,`value`) VALUES (?,?) ON DUPLICATE KEY UPDATE value=VALUES(value)',[$k,$v]); }
         toast('تنظیمات ذخیره شد.'); redirect('settings');
+        }
     }
     $keys=['brand_name'=>'نام برند','primary_color'=>'رنگ اصلی','secondary_color'=>'رنگ دوم','website_title'=>'عنوان وب‌سایت','contact_phone'=>'تلفن','contact_phone_2'=>'تلفن دوم','address'=>'آدرس','default_followup_days'=>'بازه پیگیری پیش‌فرض','currency'=>'واحد پول','credit_earn_percent'=>'درصد اعتبار خرید (٪)','default_theme'=>'تم پیش‌فرض (light/dark)','instagram'=>'اینستاگرام','telegram'=>'تلگرام','whatsapp'=>'واتساپ'];
     $currentLogo=View::setting('logo_path','');
@@ -1046,6 +1072,7 @@ if($route==='settings'){
     ob_start(); ?>
     <form method="post" enctype="multipart/form-data" class="card p-4">
         <?=View::csrf()?>
+        <?php if(!empty($settingsError)):?><div class="alert alert-danger" role="alert"><?=e($settingsError)?></div><?php endif;?>
         <?php if(!empty($logoError)):?><div class="alert alert-danger"><?=e($logoError)?></div><?php endif;?>
         <h4 class="mb-3"><i class="bi bi-palette"></i> برندینگ و لوگو</h4>
         <div class="row g-3 mb-4">
@@ -1067,6 +1094,9 @@ if($route==='settings'){
         <div class="row g-3">
             <?php foreach($keys as $k=>$l): ?><div class="col-md-6"><label class="form-label"><?=$l?></label><input name="settings[<?=$k?>]" value="<?=e(View::setting($k,''))?>" class="form-control"></div><?php endforeach;?>
         </div>
+        <hr class="my-3">
+        <h4 class="mb-3">درصد مشتری عرب</h4>
+        <div class="col-md-6"><label class="form-label" for="arab-commission-percent">درصد پورسانت درمانگر برای مشتری عرب (٪)</label><input id="arab-commission-percent" type="text" inputmode="decimal" name="settings[arab_customer_commission_percent]" value="<?=e(is_scalar($rawPercent??null)?(string)$rawPercent:View::setting(ArabCommission::SETTING,'0'))?>" class="form-control" dir="ltr" required><div class="form-text">درصد مبلغ نهایی جلسه؛ جایگزین پورسانت معمولی همان جلسه، بدون تغییر حقوق پایه. نرخ هر جلسه هنگام ثبت ذخیره می‌شود.</div></div>
         <button class="btn btn-primary mt-4"><i class="bi bi-check-lg"></i> ذخیره تنظیمات</button>
     </form>
 
