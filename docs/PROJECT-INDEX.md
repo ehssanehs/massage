@@ -35,6 +35,9 @@ branches, roles, users, settings, customers, services, therapists, appointments,
 - `appointments.deposit_amount`، migration 004؛ فرم/نمایش/ستون لیست و فیلتر `deposit=1` در public/index.php.
 - تست‌ها: `deposit-routes.test.js`، `deposit.php`، `deposit-http.py` (HTTP/MySQL واقعی روی دیتابیس‌های موقت).
 
+- فهرست‌های ماژول‌های CRUD با کلیک روی سرستون‌ها به‌صورت صعودی/نزولی در خود SQL مرتب می‌شوند؛ مرتب‌سازی قبل از صفحه‌بندی انجام می‌شود و با جستجو، ماه تولد و فیلتر بیعانه حفظ می‌شود. ورودی `sort` فقط ستون‌های فهرست‌شده در `config/modules.php` و `dir` فقط asc/desc را می‌پذیرد. جدول‌های فرعیِ بدون صفحه‌بندی در مرورگر روی ردیف‌های نمایش‌داده‌شده مرتب می‌شوند (نه رکوردهای بیرون از محدودهٔ جدول).
+- تست: `node --test tests/sort-routes.test.js tests/table-sort.test.js` و `python3 tests/sort-http.py` (MySQL/HTTP با دیتابیس موقت).
+
 ## وضعیت اجرا روی این سرور
 - کلون در `/root/massage`.
 - سرور آماده: PHP 8.2.33 (fpm/cli + pdo_mysql/sqlite, mbstring, curl, xml, zip)، MySQL 8.0.46.

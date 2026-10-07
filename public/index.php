@@ -214,8 +214,27 @@ function can_module(string $module, string $action='view'): void {
     global $modules; 
     Auth::requireCan(($modules[$module]['perm'] ?? $module) . '.' . ($action === 'view' ? 'view' : 'manage')); 
 }
-/** Build data/count queries from exactly the same joins, scope, and search predicate. */
-function list_sql(string $module, array $def, SearchQuery $search, ?BirthMonth $birthMonth = null, array $extraWhere = []): array {
+/** Only displayed columns are sortable; derived JOIN aliases are explicitly scoped. */
+function list_sort(string $module, array $def, mixed $sort, mixed $dir): array {
+    if (!is_string($sort) || !is_string($dir) || !array_key_exists($sort, $def['columns']) || !in_array($dir, ['asc', 'desc'], true)) return ['', ''];
+    if ($module === 'appointments' && $sort === 'deposit_amount' && !\App\Support\AppointmentDeposit::isAvailable()) return ['', ''];
+    if ($module === 'customers' && $sort === 'credit_balance' && !Credit::isAvailable()) return ['', ''];
+    $derived = [
+        'customers' => ['full_name', 'last_visit', 'total_spent'],
+        'appointments' => ['customer_name', 'therapist_name', 'service_name'],
+        'sessions' => ['customer_name', 'therapist_name', 'service_name'],
+        'packages' => ['customer_name'],
+    ];
+    if (in_array($sort, $derived[$module] ?? [], true)) return [$sort, $dir];
+    // Native columns are declared as fields (or established list-only columns).
+    if (array_key_exists($sort, $def['fields']) || ($module === 'customers' && in_array($sort, ['customer_code', 'credit_balance', 'segment'], true))) {
+        return [$def['table'] . '.' . $sort, $dir];
+    }
+    return ['', ''];
+}
+
+/** Build data/count queries from the same joins and predicates; sort only allowlisted columns. */
+function list_sql(string $module, array $def, SearchQuery $search, ?BirthMonth $birthMonth = null, array $extraWhere = [], string $sort = '', string $dir = ''): array {
     $table = $def['table'];
     $select = "$table.*";
     $join = '';
@@ -260,7 +279,9 @@ function list_sql(string $module, array $def, SearchQuery $search, ?BirthMonth $
         $params = array_merge($params, $birthParams);
     }
     $from = "FROM $table$join WHERE $where";
-    return ["SELECT $select $from ORDER BY $table.id DESC", $params, "SELECT COUNT(*) $from"];
+    [$sortExpr, $direction] = list_sort($module, $def, $sort, $dir);
+    $order = $sortExpr !== '' ? "$sortExpr " . strtoupper($direction) . ", $table.id " . strtoupper($direction) : "$table.id DESC";
+    return ["SELECT $select $from ORDER BY $order", $params, "SELECT COUNT(*) $from"];
 }
 
 function render_module_list(string $module): string {
@@ -280,6 +301,12 @@ function render_module_list(string $module): string {
     $errors = array_merge($search->error === null ? [] : [$search->error], $birthMonth?->errors ?? []);
     if ($depositFilter && !\App\Support\AppointmentDeposit::isAvailable()) $errors[] = \App\Support\AppointmentDeposit::UPGRADE_MESSAGE;
     $hasBirthFilter = $birthMonth?->hasInput() ?? false;
+    $rawSort = $_GET['sort'] ?? '';
+    $rawDir = $_GET['dir'] ?? '';
+    [$sortExpr, $sortDir] = list_sort($module, $def, $rawSort, $rawDir);
+    $sortKey = $sortExpr !== '' ? $rawSort : '';
+    $listFilters = array_merge($birthMonth?->queryParameters() ?? [], $depositFilter ? ['deposit' => '1'] : []);
+    if ($sortKey !== '') $listFilters += ['sort' => $sortKey, 'dir' => $sortDir];
     $pageValue = $_GET['page'] ?? '1';
     $page = is_scalar($pageValue) ? max(1, (int)Jalali::en((string)$pageValue)) : 1;
     $per = 20;
@@ -287,7 +314,7 @@ function render_module_list(string $module): string {
     $total = 0;
     $pages = 1;
     if (!$errors) {
-        [$sql, $params, $countSql] = list_sql($module, $def, $search, $birthMonth, $extraWhere);
+        [$sql, $params, $countSql] = list_sql($module, $def, $search, $birthMonth, $extraWhere, $sortKey, $sortDir);
         $total = (int)DB::value($countSql, $params);
         $pages = max(1, (int)ceil($total / $per));
         // A stale page number must not make an otherwise successful search empty.
@@ -304,6 +331,7 @@ function render_module_list(string $module): string {
   <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
     <form method="get" class="<?=$birthMonth !== null ? 'customer-filter-form' : 'd-flex flex-wrap gap-2'?>" role="search">
       <input type="hidden" name="r" value="<?=e($module)?>">
+      <?php if ($sortKey !== ''): ?><input type="hidden" name="sort" value="<?=e($sortKey)?>"><input type="hidden" name="dir" value="<?=e($sortDir)?>"><?php endif; ?>
       <?php if ($birthMonth !== null): ?><div class="customer-search-field"><label class="form-label" for="list-search-query">جستجوی مشتری</label><?php endif; ?>
       <input id="list-search-query" type="search" name="q" value="<?=e($q)?>" class="form-control <?=$birthMonth === null ? 'w-auto' : ''?>" dir="auto" maxlength="<?=SearchQuery::MAX_LENGTH?>" placeholder="<?=e($hint)?>" aria-label="<?=e('جستجو در ' . $def['title'])?>">
       <?php if ($birthMonth !== null): ?></div>
@@ -329,12 +357,16 @@ function render_module_list(string $module): string {
     </form>
     <?php if(Auth::can($def['perm'].'.manage')): ?><a class="btn btn-primary" href="<?=url($module.'.create')?>"><i class="bi bi-plus-lg"></i> افزودن</a><?php endif; ?>
   </div>
-  <div class="table-responsive"><table class="table align-middle"><thead><tr><?php foreach($def['columns'] as $c=>$l): ?><th><?=e($l)?></th><?php endforeach;?><th>عملیات</th></tr></thead><tbody>
+  <div class="table-responsive"><table class="table align-middle" data-server-sort="true"><thead><tr><?php foreach($def['columns'] as $c=>$l):
+    $active = $sortKey === $c;
+    $nextDir = $active && $sortDir === 'asc' ? 'desc' : 'asc';
+    $sortUrl = url($module, array_merge($listFilters, $q !== '' ? ['q' => $q] : [], ['sort' => $c, 'dir' => $nextDir]));
+  ?><th scope="col"<?=$active ? ' aria-sort="' . ($sortDir === 'asc' ? 'ascending' : 'descending') . '"' : ''?>><a class="sort-link" href="<?=e($sortUrl)?>" title="مرتب‌سازی بر اساس <?=e($l)?>" aria-label="مرتب‌سازی <?=e($l)?> به صورت <?=$nextDir === 'asc' ? 'صعودی' : 'نزولی'?>"><?=e($l)?><span class="sort-indicator" aria-hidden="true"><?=$active ? ($sortDir === 'asc' ? ' ▲' : ' ▼') : ' ⇅'?></span></a></th><?php endforeach;?><th scope="col">عملیات</th></tr></thead><tbody>
     <?php foreach($rows as $row): ?><tr><?php foreach($def['columns'] as $c=>$l): ?><td><?=cell_value($c, $row[$c] ?? '')?></td><?php endforeach; ?><td class="text-nowrap"><a class="btn btn-sm btn-soft" href="<?=url($module.'.show',['id'=>$row['id']])?>">نمایش</a><?php if(Auth::can($def['perm'].'.manage')): ?> <a class="btn btn-sm btn-outline-primary" href="<?=url($module.'.edit',['id'=>$row['id']])?>">ویرایش</a> <form method="post" action="<?=url($module.'.delete',['id'=>$row['id']])?>" class="d-inline" onsubmit="return confirm('حذف شود؟')"><?=View::csrf()?><button class="btn btn-sm btn-outline-danger">حذف</button></form><?php endif;?></td></tr><?php endforeach; ?>
     <?php if(!$rows): ?><tr><td colspan="20" class="empty">رکوردی یافت نشد.</td></tr><?php endif;?>
   </tbody></table></div>
   <div class="small text-muted">تعداد: <?=Jalali::fa($total)?></div>
-  <?=render_pager($module, $page, $pages, $q, array_merge($birthMonth?->queryParameters() ?? [], $depositFilter ? ['deposit' => '1'] : []))?>
+  <?=render_pager($module, $page, $pages, $q, $listFilters)?>
 </div>
 <?php return (string)ob_get_clean(); }
 
@@ -728,7 +760,7 @@ if($route==='followups'){
       <div class="card p-0 mb-4 followup-group-card overflow-hidden">
         <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
           <h5 class="mb-0"><i class="bi bi-collection"></i> <?=e($title)?> <span class="badge <?=e($badgeClass)?> ms-2"><?=Jalali::fa(count($rows))?></span></h5>
-          <?php if(count($rows)>0): ?><span class="small text-muted">مرتب‌سازی بر اساس تاریخ سررسید و اولویت</span><?php endif; ?>
+          <?php if(count($rows)>0): ?><span class="small text-muted">پیش‌فرض: تاریخ سررسید و اولویت؛ با کلیک روی سرستون، ترتیب ردیف‌های نمایشی تغییر می‌کند.</span><?php endif; ?>
         </div>
         <div class="table-responsive">
           <table class="table table-hover align-middle mb-0 followup-table">

@@ -24,7 +24,7 @@ test('customer list shows a Jalali birth-month select and a Jalali birth-date co
     assert.match(select, /<option value="">— همهٔ ماه‌ها —<\/option>/);
     for (const name of ['فروردین', 'مهر', 'اسفند']) assert.match(result.body, new RegExp(`<option value="\\d+">${name}<\\/option>`));
     assert.doesNotMatch(result.body, /name="birth_from"|name="birth_to"/);
-    assert.match(result.body, /<th>تاریخ تولد<\/th>/);
+    assert.match(result.body, /<th[^>]*><a[^>]*>تاریخ تولد<span/);
     assert.match(result.body, /۱۳۶۹\/۰۱\/۰۱/);
     assert.doesNotMatch(result.body, /1990-03-21/);
     assert.match(result.body, /تعداد: ۳۷/);
