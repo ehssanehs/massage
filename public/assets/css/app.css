@@ -380,6 +380,13 @@ html[data-bs-theme="dark"] .customer-birth-filter{background:rgba(124,58,237,.06
 @media(max-width:1199px){.customer-filter-form{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:767px){.customer-filter-form{flex-basis:100%}}
 
+/* ===== SORTABLE TABLE HEADERS ===== */
+.table th .sort-link, .table th > button[aria-label^="مرتب‌سازی"]{display:inline-flex;align-items:center;gap:.35rem;color:inherit;text-decoration:none;white-space:nowrap;cursor:pointer}
+.table th .sort-link:hover, .table th > button[aria-label^="مرتب‌سازی"]:hover{color:var(--primary)!important}
+.table th .sort-link:focus-visible, .table th > button[aria-label^="مرتب‌سازی"]:focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:3px}
+.table th .sort-indicator{font-size:.8em;opacity:.7}
+.table th[aria-sort="ascending"] .sort-indicator, .table th[aria-sort="descending"] .sort-indicator{color:var(--primary);opacity:1}
+
 /* ===== PRINT ===== */
 @media print{
     .sidebar,.topbar,.btn,form{display:none!important}

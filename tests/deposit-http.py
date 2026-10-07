@@ -79,6 +79,7 @@ def main():
                 server = Server(db); servers.append(server); server.login()
                 for route, params in [('appointments',{}), ('appointments.show',{'id':1}), ('appointments.create',{})]:
                     check(server.req(route, **params)[0] == 200, 'old DB renders '+route)
+                check(server.req('appointments', sort='deposit_amount', dir='asc')[0] == 200, 'old DB ignores sorting unavailable deposit column')
                 status, body, _ = server.req('appointments', deposit='1')
                 check(status == 400 and 'migrate' in body, 'old deposit filter explains upgrade, not 500')
                 _, body, _ = server.req('appointments.create')

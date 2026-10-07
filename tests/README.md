@@ -1,5 +1,11 @@
 # تست‌های جستجو، تاریخ، ساعت و سازگاری بازیابی
 
+## تست مرتب‌سازی جدول‌ها
+
+- `sort-routes.test.js`: لیست‌های اصلی، مرتب‌سازی مجازِ ستون‌های نام/تاریخ/مبلغ، جهت‌ها، حفظ جستجو/فیلتر و رد نام ستون/جهت ناامن.
+- `table-sort.test.js`: مرتب‌سازی مرورگریِ جدول‌های جانبی (تاریخ شمسی، ارقام فارسی، مبلغ، نام، جهت و دسترس‌پذیری).
+- `sort-http.py`: نصب در دیتابیس موقت و احراز هویت HTTP واقعی، آزمون همهٔ ستون‌های اصلی روی MySQL، صفحه‌بندی ۲۵ مشتری در هر دو جهت و پاک‌سازی دیتابیس موقت. دیتابیس اصلی و `.env` را تغییر نمی‌دهد.
+
 ## تست بیعانه
 
 - `deposit-routes.test.js`: فرم/ستون/فیلتر، عدم autofill، رد مبلغ نامعتبر و ذخیره دقیق ارقام فارسی.
@@ -21,6 +27,7 @@ DB_DATABASE=massage_test DB_USERNAME=... DB_PASSWORD=... php tests/credit.php
 DB_DATABASE=massage_test DB_USERNAME=... DB_PASSWORD=... php tests/followup.php
 DB_DATABASE=massage_test php tests/deposit.php
 python3 tests/deposit-http.py
+python3 tests/sort-http.py
 node --test tests/*.test.js
 ```
 

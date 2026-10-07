@@ -156,6 +156,78 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Sort only the rendered rows of unpaginated tables. Server-sorted
+    // module lists own their order and are explicitly opted out.
+    const faCollator = new Intl.Collator('fa-IR', { numeric: true, sensitivity: 'base' });
+    const latinDigits = value => String(value).replace(/[۰-۹٠-٩]/g, digit => {
+        const code = digit.charCodeAt(0);
+        return String(code - (code >= 0x6F0 ? 0x6F0 : 0x660));
+    });
+    const blankSortValue = value => !value || /^[\s\-–—]+$/.test(value);
+    const datePattern = /(?:^|\D)(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/;
+    function sortValue(cell, type) {
+        const text = latinDigits(cell.textContent).replace(/[\u200c\u200e\u200f]/g, '').trim();
+        if (blankSortValue(text)) return null;
+        if (type === 'date') {
+            const match = text.match(datePattern);
+            if (match) return [match[1], match[2], match[3], match[4] || 0, match[5] || 0, match[6] || 0]
+                .map(part => String(part).padStart(4, '0')).join('');
+        }
+        if (type === 'number') {
+            const number = Number(text.replace(/[٬,\s\u00a0]/g, '').replace(/٫/g, '.').replace(/[^\d.+\-]/g, ''));
+            if (Number.isFinite(number)) return number;
+        }
+        return text;
+    }
+    document.querySelectorAll('table').forEach(table => {
+        if (table.hasAttribute('data-server-sort')) return;
+        const header = table.tHead ? table.tHead.rows[0] : table.tBodies[0] && table.tBodies[0].rows[0];
+        if (!header || !Array.from(header.cells).every(cell => cell.tagName === 'TH')) return;
+        if (!table.caption && table.createCaption) {
+            const caption = table.createCaption();
+            caption.className = 'caption-top small text-muted';
+            caption.textContent = 'مرتب‌سازی فقط ردیف‌های نمایش‌داده‌شده در این جدول را تغییر می‌دهد.';
+        }
+        Array.from(header.cells).forEach((th, column) => {
+            const label = th.textContent.trim();
+            if (!label || /^(عملیات|انتخاب|اقدامات)$/.test(label) || th.querySelector('input, select, button, a')) return;
+            const button = document.createElement('button');
+            button.setAttribute('type', 'button');
+            button.setAttribute('class', 'btn btn-link p-0 text-reset text-decoration-none fw-semibold');
+            button.setAttribute('aria-label', 'مرتب‌سازی بر اساس ' + label);
+            th.textContent = '';
+            button.textContent = label + ' ↕';
+            th.appendChild(button);
+            th.setAttribute('aria-sort', 'none');
+            button.addEventListener('click', () => {
+                const direction = th.getAttribute('aria-sort') === 'ascending' ? 'descending' : 'ascending';
+                const order = direction === 'ascending' ? 1 : -1;
+                Array.from(header.cells).forEach(cell => {
+                    if (cell.getAttribute('aria-sort') && cell !== th) {
+                        cell.setAttribute('aria-sort', 'none');
+                        const otherButton = cell.querySelector('button');
+                        if (otherButton) otherButton.textContent = otherButton.textContent.replace(/ [▲▼]$/, ' ↕');
+                    }
+                });
+                th.setAttribute('aria-sort', direction);
+                button.textContent = label + (order === 1 ? ' ▲' : ' ▼');
+                Array.from(table.tBodies).forEach(body => {
+                    const rows = Array.from(body.rows).filter(row => row !== header);
+                    const values = rows.map(row => latinDigits(row.cells[column] ? row.cells[column].textContent : '').trim())
+                        .filter(value => !blankSortValue(value));
+                    const type = values.length && values.every(value => datePattern.test(value)) ? 'date'
+                        : values.length && values.every(value => /^\s*[+-]?[\d\s٬,٫.]+\s*(?:ریال|تومان)?\s*$/.test(value)) ? 'number' : 'text';
+                    rows.map((row, index) => ({ row, index, value: row.cells[column] ? sortValue(row.cells[column], type) : null }))
+                        .sort((a, b) => {
+                            if (a.value === null || b.value === null) return a.value === null ? (b.value === null ? a.index - b.index : 1) : -1;
+                            const comparison = type === 'number' ? a.value - b.value : faCollator.compare(a.value, b.value);
+                            return order * comparison || a.index - b.index;
+                        }).forEach(({ row }) => body.appendChild(row));
+                });
+            });
+        });
+    });
+
     // Revenue chart
     const canvas = document.getElementById('revenueChart');
     if (canvas && window.Chart && canvas.dataset.url) {
