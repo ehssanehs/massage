@@ -13,7 +13,7 @@
 
 ## روتر (public/index.php ~865 خط)
 - ماژول‌های CRUD دیتابیس‌محور از `config/modules.php`: customers, services, therapists, appointments, sessions (massage_sessions), expenses, inventory, packages, campaigns — هر کدام index/create/edit/show/delete با soft delete (deleted_at).
-- صفحات اختصاصی: dashboard (آمار + هشدار انبار + نمودار درآمد ۳۰روزه api.revenue)، followups (گروه‌بندی معوق/امروز/آینده + ثبت نتیجه)، retention (RFM)، finance/reports (DateRange + export.csv با BOM)، salaries، users (RBAC)، settings (برندینگ/لوگو/روش‌های پرداخت)، backup، audit.
+- صفحات اختصاصی: dashboard (آمار + هشدار انبار + نمودار درآمد ۳۰روزه api.revenue)، followups (گروه‌بندی معوق/امروز/آینده + ثبت نتیجه و ویرایش وضعیت/متن نتیجهٔ پیگیری انجام‌شده)، retention (RFM)، finance/reports (DateRange + export.csv با BOM)، salaries، users (RBAC)، settings (برندینگ/لوگو/روش‌های پرداخت)، backup، audit.
 - منطق خاص: `check_double_booking` (تداخل نوبت درمانگر)، `after_save` (تایم‌لاین + پیگیری خودکار جلسه completed)، `list_sql` (JOIN+search مشترک برای ردیف/COUNT)، autofill قیمت از data-price خدمت.
 - حساب پیش‌فرض لاگین روی فرم هاردکد شده (admin@example.com/password در value) — نکته امنیتی.
 
