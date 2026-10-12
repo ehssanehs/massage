@@ -1,0 +1,12 @@
+# Backup dumps (and anything else written here) must never be downloadable.
+# A dump holds every customer record and every password hash, and the filename
+# is a predictable timestamp — so an unprotected /storage/backups/*.sql is a
+# full database leak. The app also supports BACKUP_PATH pointing outside the
+# web root; see docs/RESTORE.md.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
