@@ -117,16 +117,26 @@ namespace {
     \App\Core\DB::$overlap = $input['overlap'] ?? false;
     $_GET = $input['get'] ?? ['r'=>'customers.show', 'id'=>1];
     $_POST = $input['post'] ?? [];
+    // Two-section mode is opt-in: with no per-section database configured the
+    // front controller stays in single-section mode, exactly like every legacy
+    // install and every other suite's scratch database.
+    if ($input['tenants'] ?? false) {
+        $_ENV['DB_DATABASE_MEN'] = $input['tenants']['men'] ?? 'test_men';
+        $_ENV['DB_DATABASE_WOMEN'] = $input['tenants']['women'] ?? 'test_women';
+        putenv('DB_DATABASE_MEN=' . $_ENV['DB_DATABASE_MEN']);
+        putenv('DB_DATABASE_WOMEN=' . $_ENV['DB_DATABASE_WOMEN']);
+    }
     $_SERVER['REQUEST_METHOD'] = isset($input['post']) ? 'POST' : 'GET';
     $_SERVER['REMOTE_ADDR'] = '192.0.2.1';
+    $_SERVER['REQUEST_URI'] = $input['request_uri'] ?? '/index.php';
     session_save_path(sys_get_temp_dir());
     session_start();
-    $_SESSION = ['uid'=>1, '_csrf'=>'test-only-csrf-token'];
+    $_SESSION = $input['session'] ?? ['uid'=>1, 'tenant'=>'men', '_csrf'=>'test-only-csrf-token'];
     if ($_SERVER['REQUEST_METHOD'] === 'POST') $_POST['_csrf'] = $_SESSION['_csrf'];
     ob_start();
     register_shutdown_function(static function (): void {
         $html = ob_get_clean();
-        $result = ['body'=>$html, 'status'=>http_response_code() ?: 200, 'queries'=>\App\Core\DB::$queries, 'writes'=>\App\Core\DB::$writes, 'error'=>error_get_last()];
+        $result = ['body'=>$html, 'status'=>http_response_code() ?: 200, 'queries'=>\App\Core\DB::$queries, 'writes'=>\App\Core\DB::$writes, 'session'=>$_SESSION, 'error'=>error_get_last()];
         if (session_status() === PHP_SESSION_ACTIVE) session_destroy();
         echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     });

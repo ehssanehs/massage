@@ -1,46 +1,96 @@
 #!/usr/bin/env php
 <?php
 require __DIR__ . '/../app/bootstrap.php';
-use App\Core\DB; use App\Services\FollowUpService; use App\Services\BackupService; use App\Services\RestoreCheckService;
-$cmd = $argv[1] ?? 'help';
+use App\Core\DB; use App\Services\FollowUpService; use App\Services\BackupService; use App\Services\RestoreCheckService; use App\Support\Tenant;
+
+$args = array_slice($argv, 1);
+$cmd = array_shift($args) ?? 'help';
+$positional = array_values(array_filter($args, static fn(string $a): bool => !str_starts_with($a, '--')));
+
+/**
+ * Which sections a DB command applies to. Defaults to every section that has a
+ * database configured, so `migrate` keeps both CRMs in step. `--tenant=men`
+ * (or women) narrows it to one; a plain DB_DATABASE install yields one pass.
+ */
+function target_tenants(): array {
+    $requested = null;
+    foreach ($GLOBALS['args'] as $a) {
+        if (preg_match('/^--tenant=(.+)$/', $a, $m)) $requested = $m[1];
+    }
+    $all = array_keys(Tenant::all());
+    $configured = array_values(array_filter($all, function (string $t): bool {
+        $name = env_value('DB_DATABASE_' . strtoupper($t));
+        return is_string($name) && trim($name) !== '';
+    }));
+    if ($configured === []) {
+        // Legacy single-install config, or an explicit scratch DB for tests.
+        if (is_string(env_value('DB_DATABASE')) && trim((string)env_value('DB_DATABASE')) !== '') return [null];
+        throw new RuntimeException('هیچ پایگاه‌داده‌ای تعیین نشده است؛ DB_DATABASE_MEN و DB_DATABASE_WOMEN را در .env مقداردهی کنید.');
+    }
+    if ($requested === null) return $configured;
+    if ($requested === 'all') return $configured;
+    if (!in_array($requested, $all, true)) throw new InvalidArgumentException("بخش نامعتبر: $requested (men|women|all)");
+    if (!in_array($requested, $configured, true)) throw new RuntimeException('برای بخش ' . Tenant::all()[$requested]['label'] . ' پایگاه‌داده‌ای تنظیم نشده است.');
+    return [$requested];
+}
+
 function run_migrations(): void {
     $files = glob(base_path('database/migrations/*.sql')) ?: [];
     sort($files);
     foreach ($files as $file) DB::pdo()->exec(file_get_contents($file));
 }
+function seed(): void {
+    DB::pdo()->exec(file_get_contents(base_path('database/seeders/001_seed_defaults.sql')));
+}
+/** Run $fn once per target section, switching the connection between passes. */
+function each_tenant(callable $fn): void {
+    foreach (target_tenants() as $tenant) {
+        if ($tenant !== null) Tenant::activateForCli($tenant);
+        DB::reset();
+        $label = $tenant === null ? 'تک‌بخشی' : Tenant::all()[$tenant]['label'] . " ($tenant)";
+        echo "— $label\n";
+        $fn($tenant);
+    }
+}
+
 try {
     if ($cmd === 'migrate') {
-        run_migrations();
-        echo "Migrations completed.\n";
+        each_tenant(function (): void { run_migrations(); echo "  Migrations completed.\n"; });
     } elseif ($cmd === 'seed') {
-        DB::pdo()->exec(file_get_contents(base_path('database/seeders/001_seed_defaults.sql')));
-        echo "Seeders completed.\n";
+        each_tenant(function (): void { seed(); echo "  Seeders completed.\n"; });
     } elseif ($cmd === 'install') {
-        run_migrations();
-        DB::pdo()->exec(file_get_contents(base_path('database/seeders/001_seed_defaults.sql')));
-        echo "Application installed. Default admin: admin@example.com / password\n";
+        each_tenant(function (): void { run_migrations(); seed(); echo "  Installed. Default admin: admin@example.com / password\n"; });
     } elseif ($cmd === 'user:password') {
-        $email = $argv[2] ?? 'admin@example.com';
-        $plain = $argv[3] ?? 'password';
+        $email = $positional[0] ?? 'admin@example.com';
+        $plain = $positional[1] ?? 'password';
         $hash = password_hash($plain, PASSWORD_DEFAULT);
-        $n = DB::exec("UPDATE users SET password_hash=?, status='active', updated_at=NOW() WHERE email=?", [$hash, $email]);
-        if ($n === 0) {
-            fwrite(STDERR, "No user found with email $email\n");
-            exit(1);
-        }
-        echo "Password updated for $email\n";
+        $updated = 0;
+        each_tenant(function () use ($email, $hash, &$updated): void {
+            $n = DB::exec("UPDATE users SET password_hash=?, status='active', updated_at=NOW() WHERE email=?", [$hash, $email]);
+            if ($n === 0) { echo "  No user found with email $email\n"; return; }
+            $updated += $n;
+            echo "  Password updated for $email\n";
+        });
+        if ($updated === 0) { fwrite(STDERR, "No user found with email $email in any section\n"); exit(1); }
     } elseif ($cmd === 'schedule:run') {
-        $n = FollowUpService::generateDueFromLastSessions();
-        $low = DB::select('SELECT * FROM inventory_items WHERE quantity <= minimum_quantity AND status="active"');
-        echo "Follow-ups generated: $n; Low stock items: ".count($low)."\n";
+        each_tenant(function (): void {
+            $n = FollowUpService::generateDueFromLastSessions();
+            $low = DB::select('SELECT * FROM inventory_items WHERE quantity <= minimum_quantity AND status="active"');
+            echo "  Follow-ups generated: $n; Low stock items: " . count($low) . "\n";
+        });
     } elseif ($cmd === 'backup:check') {
-        if (count($argv) > 2) throw new InvalidArgumentException('این دستور فایل SQL را وارد یا بررسی نمی‌کند؛ آن را بدون آرگومان روی دیتابیس آزمایشیِ بازیابی‌شده اجرا کنید.');
-        $report = RestoreCheckService::inspect();
-        echo RestoreCheckService::formatReport($report);
-        exit($report['ok'] ? 0 : 2);
+        if (count($positional) > 0) throw new InvalidArgumentException('این دستور فایل SQL را وارد یا بررسی نمی‌کند؛ آن را بدون آرگومان روی دیتابیس آزمایشیِ بازیابی‌شده اجرا کنید.');
+        $fail = false;
+        each_tenant(function () use (&$fail): void {
+            $report = RestoreCheckService::inspect();
+            echo RestoreCheckService::formatReport($report);
+            if (!$report['ok']) $fail = true;
+        });
+        exit($fail ? 2 : 0);
     } elseif ($cmd === 'backup:create') {
-        echo BackupService::create() . "\n";
+        each_tenant(function (): void { echo '  ' . BackupService::create() . "\n"; });
     } else {
         echo "Commands: install, migrate, seed, user:password [email] [password], schedule:run, backup:create, backup:check\n";
+        echo "Options:  --tenant=men|women|all (default: every configured section)\n";
     }
-} catch (Throwable $e) { fwrite(STDERR, $e->getMessage()."\n"); exit(1); }
+} catch (Throwable $e) { fwrite(STDERR, $e->getMessage() . "\n"); exit(1); }

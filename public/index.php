@@ -2,11 +2,13 @@
 declare(strict_types=1);
 require __DIR__ . '/../app/bootstrap.php';
 
-use App\Core\Auth; use App\Core\DB; use App\Core\Security; use App\Support\View; use App\Support\Jalali; use App\Support\DateRange; use App\Support\ClockTime; use App\Support\SearchQuery; use App\Support\BirthMonth; use App\Services\Audit; use App\Services\FollowUpService; use App\Services\SalaryService; use App\Services\ArabCommission; use App\Services\RetentionService; use App\Services\BackupService; use App\Services\PaymentMethods; use App\Services\Credit;
+use App\Core\Auth; use App\Core\DB; use App\Core\Security; use App\Support\View; use App\Support\Tenant; use App\Support\Jalali; use App\Support\DateRange; use App\Support\ClockTime; use App\Support\SearchQuery; use App\Support\BirthMonth; use App\Services\Audit; use App\Services\FollowUpService; use App\Services\SalaryService; use App\Services\ArabCommission; use App\Services\RetentionService; use App\Services\BackupService; use App\Services\PaymentMethods; use App\Services\Credit;
 
+Tenant::selectFromRequest();
+if (!isset($_GET['r']) && ($pathRoute = Tenant::routeFromRequest()) !== null) $_GET['r'] = $pathRoute;
 Security::verifyCsrf();
 $modules = require base_path('config/modules.php');
-$route = $_GET['r'] ?? 'dashboard';
+$route = $_GET['r'] ?? (Tenant::current() === null ? 'home' : 'dashboard');
 
 function toast(string $msg): void { $_SESSION['toast']=$msg; }
 function money($n): string { return Jalali::fa(number_format((float)$n, 0)) . ' ریال'; }
@@ -475,9 +477,22 @@ function customer_profile_extra(int $id): string {
     <?php return (string)ob_get_clean();
 }
 
+$sectionKey = \App\Support\PublicSite::sectionKeyFor($route);
+if ($route === 'home' || $sectionKey !== null) {
+    if (Auth::user()) redirect('dashboard');
+    echo $sectionKey === null ? \App\Support\PublicSite::home() : \App\Support\PublicSite::section($sectionKey);
+    exit;
+}
+
 if($route==='login'){
-    if(Auth::user()) redirect('dashboard');
-    if($_SERVER['REQUEST_METHOD']==='POST'){
+    if($_SERVER['REQUEST_METHOD']==='POST') {
+        if (Tenant::isMulti()) {
+            $selected = $_POST['tenant'] ?? Tenant::current();
+            if (!is_string($selected) || !Tenant::select($selected)) $error='بخش آقایان یا خانم‌ها را انتخاب کنید.';
+        }
+    }
+    if(empty($error) && Auth::user()) redirect('dashboard');
+    if($_SERVER['REQUEST_METHOD']==='POST' && empty($error)){
         // Session probe: the login form carries a token stored in the session on GET.
         // If it does not round-trip, sessions are broken (cookies blocked or the
         // server-side save path not writable) — without this check the login
@@ -489,11 +504,12 @@ if($route==='login'){
         else $error='ایمیل یا رمز عبور اشتباه است.';
     }
     $_SESSION['_login_probe']=$probe=bin2hex(random_bytes(16));
-    ob_start(); ?><div class="auth-card"><h1>ورود به سامانه مدیریت ماساژ</h1><?php if(!empty($error)): ?><div class="alert alert-danger"><?=e($error)?></div><?php endif;?><form method="post"><?=View::csrf()?><input type="hidden" name="_probe" value="<?=e($probe)?>"><label class="form-label">ایمیل</label><input name="email" type="email" class="form-control" required value="admin@example.com"><label class="form-label mt-3">رمز عبور</label><input name="password" type="password" class="form-control" required value="password"><button class="btn btn-primary w-100 mt-4">ورود امن</button></form><p class="text-muted small mt-3">حساب پیش‌فرض: admin@example.com / password</p></div><?php echo View::render('ورود', ob_get_clean()); exit;
+    ob_start(); ?><div class="auth-card"><a class="auth-home-link" href="/"><i class="bi bi-arrow-right"></i> صفحه اصلی</a><h1>ورود پرسنل</h1><?php if(!empty($error)): ?><div class="alert alert-danger"><?=e($error)?></div><?php endif;?><form method="post"><?=View::csrf()?><input type="hidden" name="_probe" value="<?=e($probe)?>"><?php if(Tenant::isMulti()): ?><label class="form-label" for="tenant">بخش</label><select id="tenant" name="tenant" class="form-select" required><option value="">انتخاب بخش</option><?php foreach(Tenant::all() as $code=>$tenant): ?><option value="<?=e($code)?>"<?=Tenant::current()===$code?' selected':''?>><?=e($tenant['label'])?></option><?php endforeach;?></select><?php endif;?><label class="form-label<?=Tenant::isMulti() ? ' mt-3' : ''?>">ایمیل</label><input name="email" type="email" class="form-control" required autocomplete="username"><label class="form-label mt-3">رمز عبور</label><input name="password" type="password" class="form-control" required autocomplete="current-password"><button class="btn btn-primary w-100 mt-4">ورود امن</button></form></div><?php echo View::render('ورود پرسنل', ob_get_clean()); exit;
 }
 if($route==='logout'){ Auth::logout(); redirect('login'); }
 if($route==='profile.password'){
-    Auth::requireLogin();
+    Tenant::requireSelected();
+Auth::requireLogin();
     if($_SERVER['REQUEST_METHOD']==='POST'){
         $current=$_POST['current_password']??''; $new=$_POST['new_password']??''; $confirm=$_POST['confirm_password']??'';
         $user=DB::row('SELECT password_hash FROM users WHERE id=?',[Auth::id()]);
@@ -504,6 +520,7 @@ if($route==='profile.password'){
     }
     ob_start(); ?><div class="card p-4" style="max-width:500px"><h3 class="mb-3">تغییر رمز عبور</h3><?php if(!empty($error)): ?><div class="alert alert-danger"><?=e($error)?></div><?php endif;?><form method="post"><?=View::csrf()?><label class="form-label">رمز عبور فعلی</label><input name="current_password" type="password" class="form-control mb-3" required><label class="form-label">رمز عبور جدید</label><input name="new_password" type="password" class="form-control mb-3" required minlength="6"><label class="form-label">تکرار رمز عبور جدید</label><input name="confirm_password" type="password" class="form-control mb-3" required minlength="6"><button class="btn btn-primary">ذخیره رمز جدید</button></form></div><?php echo View::render('تغییر رمز عبور', ob_get_clean()); exit;
 }
+Tenant::requireSelected();
 Auth::requireLogin();
 
 if(isset($modules[$route])) { handle_module($route,'index'); exit; }

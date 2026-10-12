@@ -16,7 +16,7 @@ function route(module, q, page) {
     assert.notEqual(result.status, 500);
     assert.deepEqual(result.writes, [], 'search is read-only');
     const links = result.body.replaceAll('&amp;', '&');
-    const ids = [...links.matchAll(new RegExp(`href="index.php\\?r=${module}\\.show&id=(\\d+)"`, 'g'))].map(match => +match[1]);
+    const ids = [...links.matchAll(new RegExp(String.raw`href="[^"]*[?&]r=${module}\.show&id=(\d+)"`, 'g'))].map(match => +match[1]);
     return { ...result, ids };
 }
 const countQuery = result => result.queries.find(query => query.sql.startsWith('SELECT COUNT(*) FROM '));
@@ -84,7 +84,7 @@ test('search count, preserved pagination query, stale pages and reset link stay 
     const links = [...result.body.matchAll(/class="page-link" href="([^"]+)"/g)];
     assert.ok(links.length > 0);
     for (const [, href] of links) assert.equal(new URL(href.replaceAll('&amp;', '&'), 'https://example.invalid').searchParams.get('q'), 'آزمون صفحه');
-    assert.match(result.body, /href="index.php\?r=customers">پاک‌کردن جستجو<\/a>/);
+    assert.match(result.body, /href="[^"]*r=customers">پاک‌کردن جستجو<\/a>/);
     const form = result.body.match(/<form method="get"[\s\S]*?<\/form>/)[0];
     assert.doesNotMatch(form, /name="page"/, 'new search starts at the first page');
     const cleared = route('customers');

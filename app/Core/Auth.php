@@ -12,7 +12,8 @@ final class Auth {
     public static function id(): ?int { return self::user()['id'] ?? null; }
     public static function login(string $email, string $password): bool {
         $u = DB::row("SELECT * FROM users WHERE email=? AND status='active' LIMIT 1", [$email]);
-        if (!$u || !password_verify($password, $u['password_hash'])) return false;
+        if (!$u || !($u['password_hash'] ?? '')) return false;
+        if (!password_verify($password, $u['password_hash'])) return false;
         // Regenerate session ID to prevent session fixation attacks
         session_regenerate_id(true);
         $_SESSION['uid'] = (int)$u['id'];

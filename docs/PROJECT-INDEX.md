@@ -8,7 +8,7 @@
 ## معماری
 - **Core:** `DB` (PDO singleton، insert/update عمومی)، `Auth` (session، RBAC با role+permissions JSON، super_admin=* )، `Security` (CSRF، rate limit، cleanString).
 - **Services:** `Audit` (audit_logs)، `FollowUpService` (تولید پیگیری از جلسات)، `SalaryService` (حقوق/پورسانت و جایگزینی پورسانت عادی با نرخ ثبت‌شدهٔ جلسهٔ مشتری عرب)، `ArabCommission` (اعتبارسنجی درصد و ثبت نرخ زمان جلسه)، `RetentionService` (RFM)، `BackupService` (mysqldump)، `RestoreCheckService`، `Notification`، `PaymentMethods` (لیست روش‌های پرداخت در جدول settings)، `Credit` (کیف اعتبار مشتری: لجر credit_transactions + موجودی customers.credit_balance + درصد credit_earn_percent).
-- **Support:** `View` (layout RTL، dateInput/timeInput جلالی)، `Jalali` (تبدیل شمسی/میلادی، دوره ۳۳ساله خیام)، `DateRange`، `ClockTime` (نرمال‌سازی ساعت ۲۴ساعته)، `SearchQuery` (نرمال‌سازی فارسی: ی/ي، ک/ك، ارقام، اعراب؛ AND چندواژه‌ای)، `BirthMonth` (فیلتر ماه تولد شمسی ۱-۱۲ بدون سال).
+- **Support:** `View` (layout RTL، dateInput/timeInput جلالی)، `Jalali` (تبدیل شمسی/میلادی، دوره ۳۳ساله خیام)، `DateRange`، `ClockTime` (نرمال‌سازی ساعت ۲۴ساعته)، `SearchQuery` (نرمال‌سازی فارسی: ی/ي، ک/ك، ارقام، اعراب؛ AND چندواژه‌ای)، `BirthMonth` (فیلتر ماه تولد شمسی ۱-۱۲ بدون سال)، `Tenant` (انتخاب بخش آقایان/خانم‌ها و تعیین دیتابیس همان بخش).
 - **UI assets:** jalalidatepicker + timepicker محلی (بدون CDN برای این دو)، app.js.
 
 ## روتر (public/index.php ~865 خط)
@@ -22,6 +22,15 @@
 branches, roles, users, settings, customers, services, therapists, appointments, massage_sessions, followups, customer_timeline, expenses, salary_runs, customer_packages, inventory_items, inventory_movements, campaigns, audit_logs.
 - همه‌جا soft delete با deleted_at؛ FKهای InnoDB؛ تاریخ‌ها میلادی در DB، شمسی فقط در UI.
 - Seed: 5 نقش (super_admin/manager/receptionist/therapist/accountant)، ادمین، 5 خدمت، 2 درمانگر، 2 مشتری، داده نمونه.
+
+## صفحهٔ عمومی و دو بخش مستقل (آقایان/خانم‌ها)
+- `public/index.php` روت `home` را پیش از احراز هویت و بدون هیچ کوئری دیتابیس رندر می‌کند: دو کارت «خدمات ماساژ» و «بخش آموزش» + ورود پرسنل. استایل: `public/assets/css/public.css`.
+- `app/Support/Tenant.php` تنها مرجع انتخاب بخش است؛ کلید بخش (`men`/`women`) در نشست سرور ذخیره می‌شود و هیچ‌گاه نام دیتابیس از درخواست خوانده نمی‌شود. با عوض‌شدن بخش، `uid`، `_csrf` و rate-limit نشست پاک می‌شوند.
+- `DB_DATABASE_MEN` / `DB_DATABASE_WOMEN` هر بخش را به دیتابیس خودش وصل می‌کند (dbname از همان‌جا، نه از درخواست). اگر هیچ‌کدام تعیین نشده باشد، نصب تک‌بخشی با `DB_DATABASE` ادامه می‌یابد (`Tenant::isMulti()` تعیین‌کننده است).
+- مسیرهای `/men` و `/women` نقطهٔ ورود هر بخش‌اند: `public/.htaccess` (Apache) و `public/router.php` (سرور توکار PHP). `url()` و `redirect()` آدرس مطلق با پیشوند بخش می‌سازند تا مسیر بخش بین صفحات حفظ شود؛ `asset()` مطلق است تا از هر پیشوندی کار کند.
+- `bin/console` دستورهای دیتابیسی را برای همهٔ بخش‌های تنظیم‌شده اجرا می‌کند (`--tenant=men|women|all`). نام فایل پشتیبان بخش را در خود دارد (`backup-men-….sql`) تا دو بخش روی هم بازنویسی نشوند.
+- تست‌ها: `node --test tests/public-tenants-routes.test.js`، `node tests/public-pages-render.cjs` و `python3 tests/tenants-http.py` (دو دیتابیس موقت، ورود واقعی HTTP، رد شدن ورود بین‌بخشی و باطل‌شدن نشست هنگام تعویض بخش).
+- متن و محتوای صفحهٔ عمومی در `config/public-site.php` است (بدون کد؛ همان‌جا ویرایش شود).
 
 ## قراردادهای مهم (برای توسعه آینده)
 - هر فرم POST با CSRF (`View::csrf` / `Security::verifyCsrf`).

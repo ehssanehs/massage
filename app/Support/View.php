@@ -3,19 +3,25 @@ namespace App\Support;
 use App\Core\Auth;
 use App\Core\DB;
 use App\Core\Security;
+use App\Support\Tenant;
 
 final class View {
     public static function setting(string $key, mixed $default=''): mixed { return DB::value('SELECT value FROM settings WHERE `key`=?', [$key]) ?? $default; }
     public static function render(string $title, string $content, array $opts=[]): string {
-        $user = Auth::user(); $brand = self::setting('brand_name', env_value('APP_NAME','مرکز ماساژ آرامش'));
-        $primary = self::setting('primary_color','#7c3aed'); $secondary=self::setting('secondary_color','#14b8a6');
-        $logo = self::setting('logo_path',''); $theme = $_COOKIE['theme'] ?? self::setting('default_theme','light');
+        $user = Auth::user();
+        $hasTenant = Tenant::current() !== null;
+        $brand = $hasTenant ? View::setting('brand_name','') : env_value('APP_NAME','مرکز ماساژ آرامش');
+        $primary = $hasTenant ? View::setting('primary_color','#7c3aed') : '#7c3aed';
+        $secondary = $hasTenant ? View::setting('secondary_color','#14b8a6') : '#14b8a6';
+        $logo = $hasTenant ? View::setting('logo_path','') : '';
+        $theme = $_COOKIE['theme'] ?? ($hasTenant ? View::setting('default_theme','light') : 'light');
+        if ($brand==='') $brand = env_value('APP_NAME','مرکز ماساژ آرامش');
         $nav = require base_path('config/nav.php');
         ob_start(); ?>
 <!doctype html><html lang="fa" dir="rtl" data-bs-theme="<?=e($theme)?>" data-timezone="<?=e(date_default_timezone_get())?>" data-today="<?=e(Jalali::toJalali(date('Y-m-d')))?>"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?=e($title)?> | <?=e($brand)?></title>
-<link rel="icon" href="<?=e(self::setting('favicon_path','assets/img/favicon.png'))?>">
+<link rel="icon" href="<?=e($hasTenant ? self::setting('favicon_path','/assets/img/favicon.png') : '/assets/img/favicon.png')?>">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100..900&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
