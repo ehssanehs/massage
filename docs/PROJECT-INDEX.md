@@ -2,7 +2,7 @@
 
 **Stack:** PHP 8.2+ خالص (بدون فریم‌ورک)، MySQL/MariaDB، Bootstrap 5 RTL، Chart.js، بدون Composer vendor.
 **Entry:** `public/index.php` (front controller + روتر با `?r=`) → `app/bootstrap.php`.
-**CLI:** `bin/console` (install, migrate, seed, user:password, schedule:run, backup:create, backup:check).
+**CLI:** `bin/console` (install, migrate, seed, demo:seed, user:password, schedule:run, backup:create, backup:check).
 **نصب:** `php bin/console install` + `.env` (از .env.example). اکانت پیش‌فرض: admin@example.com / password
 
 ## معماری
@@ -21,7 +21,8 @@
 ## دیتابیس (database/schema.sql — 15 جدول)
 branches, roles, users, settings, customers, services, therapists, appointments, massage_sessions, followups, customer_timeline, expenses, salary_runs, customer_packages, inventory_items, inventory_movements, campaigns, audit_logs.
 - همه‌جا soft delete با deleted_at؛ FKهای InnoDB؛ تاریخ‌ها میلادی در DB، شمسی فقط در UI.
-- Seed: 5 نقش (super_admin/manager/receptionist/therapist/accountant)، ادمین، 5 خدمت، 2 درمانگر، 2 مشتری، داده نمونه.
+- Seed (`database/seeders/001_seed_defaults.sql`) فقط حداقلِ لازم برای کار کردن سامانه است: ۵ نقش (super_admin/manager/receptionist/therapist/accountant)، یک مدیر (`admin@example.com` / `password`، بدون شعبه) و ۱۰ تنظیم پیش‌فرض. **هیچ دادهٔ نمونه‌ای (خدمت، درمانگر، مشتری، نوبت، جلسه، پیگیری، هزینه، انبار، شعبه) ساخته نمی‌شود و دیتابیس بعد از نصب خالی است.** دادهٔ نمونه اختیاری در `database/seeders/002_demo_data.sql` است و با `php bin/console demo:seed` بارگذاری می‌شود.
+- نقش‌ها حذف‌شدنی نیستند: `users.role_id` غیرNULL و کلید خارجی است و همهٔ بررسی‌های دسترسی از همان جدول خوانده می‌شوند؛ بدون آن‌ها هیچ کاربری قابل ساخت نیست.
 
 ## صفحهٔ عمومی و دو بخش مستقل (آقایان/خانم‌ها)
 - `public/index.php` روت `home` را پیش از احراز هویت و بدون هیچ کوئری دیتابیس رندر می‌کند: دو کارت «خدمات ماساژ» و «بخش آموزش» + ورود پرسنل. استایل: `public/assets/css/public.css`.

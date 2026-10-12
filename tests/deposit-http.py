@@ -90,6 +90,10 @@ def main():
             else:
                 result = run(['php8.2','bin/console','install'], env=env)
                 check(result.returncode == 0, 'fresh install: '+result.stderr)
+                # A fresh install has no data by design; this suite exercises real
+                # records, so it loads the optional sample data explicitly.
+                demo = run(['php8.2','bin/console','demo:seed'], env=env)
+                check(demo.returncode == 0, 'demo data: '+demo.stderr)
             for _ in range(2):
                 result = run(['php8.2','bin/console','migrate'], env=env)
                 check(result.returncode == 0, 'repeat migration: '+result.stderr)

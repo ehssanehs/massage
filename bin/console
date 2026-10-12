@@ -42,6 +42,13 @@ function run_migrations(): void {
 function seed(): void {
     DB::pdo()->exec(file_get_contents(base_path('database/seeders/001_seed_defaults.sql')));
 }
+/**
+ * Optional sample data (a demo branch, services, therapists, customers, ...).
+ * Never part of install: a fresh install must contain no demo records.
+ */
+function seed_demo(): void {
+    DB::pdo()->exec(file_get_contents(base_path('database/seeders/002_demo_data.sql')));
+}
 /** Run $fn once per target section, switching the connection between passes. */
 function each_tenant(callable $fn): void {
     foreach (target_tenants() as $tenant) {
@@ -59,7 +66,9 @@ try {
     } elseif ($cmd === 'seed') {
         each_tenant(function (): void { seed(); echo "  Seeders completed.\n"; });
     } elseif ($cmd === 'install') {
-        each_tenant(function (): void { run_migrations(); seed(); echo "  Installed. Default admin: admin@example.com / password\n"; });
+        each_tenant(function (): void { run_migrations(); seed(); echo "  Installed (no demo data). Default admin: admin@example.com / password\n"; });
+    } elseif ($cmd === 'demo:seed') {
+        each_tenant(function (): void { seed_demo(); echo "  Sample data loaded (demo services, therapists, customers, ...).\n"; });
     } elseif ($cmd === 'user:password') {
         $email = $positional[0] ?? 'admin@example.com';
         $plain = $positional[1] ?? 'password';
@@ -90,7 +99,7 @@ try {
     } elseif ($cmd === 'backup:create') {
         each_tenant(function (): void { echo '  ' . BackupService::create() . "\n"; });
     } else {
-        echo "Commands: install, migrate, seed, user:password [email] [password], schedule:run, backup:create, backup:check\n";
+        echo "Commands: install, migrate, seed, demo:seed, user:password [email] [password], schedule:run, backup:create, backup:check\n";
         echo "Options:  --tenant=men|women|all (default: every configured section)\n";
     }
 } catch (Throwable $e) { fwrite(STDERR, $e->getMessage() . "\n"); exit(1); }
