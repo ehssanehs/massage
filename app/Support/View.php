@@ -21,7 +21,7 @@ final class View {
 <!doctype html><html lang="fa" dir="rtl" data-bs-theme="<?=e($theme)?>" data-timezone="<?=e(date_default_timezone_get())?>" data-today="<?=e(Jalali::toJalali(date('Y-m-d')))?>"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?=e($title)?> | <?=e($brand)?></title>
-<link rel="icon" href="<?=e($hasTenant ? self::setting('favicon_path','/assets/img/favicon.png') : '/assets/img/favicon.png')?>">
+<link rel="icon" href="<?=e($hasTenant ? self::setting('favicon_path', asset('img/favicon.png')) : asset('img/favicon.png'))?>">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100..900&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.rtl.min.css" rel="stylesheet">

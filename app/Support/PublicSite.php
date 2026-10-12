@@ -24,7 +24,7 @@ final class PublicSite {
     }
 
     public static function url(string $route = 'home'): string {
-        return '/index.php?r=' . rawurlencode($route);
+        return Url::plain($route);
     }
 
     private static function layout(string $title, string $body): string {
@@ -51,7 +51,7 @@ final class PublicSite {
         if (!Tenant::isMulti()) return '';
         $out = '';
         foreach (Tenant::all() as $code => $tenant) {
-            $out .= '<a class="public-staff-button" href="' . e('/' . $code . '/index.php?r=login') . '">'
+            $out .= '<a class="public-staff-button" href="' . e(Url::sectionLogin($code)) . '">'
                 . '<i class="bi bi-shield-lock"></i> ورود ' . e($tenant['label']) . '</a>';
         }
         return $out;

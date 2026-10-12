@@ -136,6 +136,9 @@ namespace {
     $_SERVER['REQUEST_METHOD'] = isset($input['post']) ? 'POST' : 'GET';
     $_SERVER['REMOTE_ADDR'] = '192.0.2.1';
     $_SERVER['REQUEST_URI'] = $input['request_uri'] ?? '/index.php';
+    // The front controller derives the mount point from SCRIPT_NAME; CLI would
+    // otherwise leak the harness path into every generated URL.
+    $_SERVER['SCRIPT_NAME'] = $input['script_name'] ?? '/index.php';
     session_save_path(sys_get_temp_dir());
     session_start();
     $_SESSION = $input['session'] ?? ['uid'=>1, 'tenant'=>'men', '_csrf'=>'test-only-csrf-token'];

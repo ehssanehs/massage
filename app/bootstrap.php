@@ -47,8 +47,8 @@ function redirect(string $route, array $params = []): never {
     }
     exit;
 }
-function url(string $route, array $params = []): string { $prefix = \App\Support\Tenant::pathPrefix(); return ($prefix ?: '') . '/index.php?' . http_build_query(array_merge(['r'=>$route], $params)); }
-function asset(string $path): string { return '/assets/' . ltrim($path, '/'); }
+function url(string $route, array $params = []): string { return \App\Support\Url::to($route, $params); }
+function asset(string $path): string { return \App\Support\Url::asset($path); }
 
 $lang = require base_path('config/lang/fa.php');
 function t(string $key, ?string $fallback = null): string { global $lang; return $lang[$key] ?? $fallback ?? $key; }

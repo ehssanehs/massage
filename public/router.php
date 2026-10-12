@@ -23,6 +23,10 @@ if ($path !== '/' && $candidate !== false && $docroot !== false
     return false;
 }
 
-$_SERVER['SCRIPT_NAME'] = '/index.php';
+// Keep the mount point while normalising the script name to index.php, so the
+// base-path detection still sees a subdirectory deployment.
+$baseDir = str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '')));
+if ($baseDir === '.' || $baseDir === '/') $baseDir = '';
+$_SERVER['SCRIPT_NAME'] = $baseDir . '/index.php';
 $_SERVER['SCRIPT_FILENAME'] = __DIR__ . '/index.php';
 require __DIR__ . '/index.php';
