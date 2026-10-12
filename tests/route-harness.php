@@ -21,6 +21,11 @@ namespace App\Core {
 
         public static function select(string $sql, array $params = []): array {
             self::record($sql, $params);
+            // Follow-up matrix: rows/columns are explicit fixtures because the
+            // pivot depends on per-customer follow-up counts, which a single
+            // generic fixture row cannot express.
+            if (isset(self::$fixtures['matrix_customers']) && str_contains($sql, 'FROM customers c WHERE')) return self::$fixtures['matrix_customers'];
+            if (isset(self::$fixtures['matrix_followups']) && str_contains($sql, 'FROM followups WHERE deleted_at IS NULL AND customer_id IN')) return self::$fixtures['matrix_followups'];
             if (self::$searchFixture && preg_match('/^SELECT (\w+)\.\*.*?\bFROM \1\b/s', $sql)) {
                 $statement = self::listDatabase()->prepare($sql);
                 $statement->execute($params);
@@ -67,6 +72,8 @@ namespace App\Core {
 
         public static function value(string $sql, array $params = []): mixed {
             self::record($sql, $params);
+            if (str_contains($sql, 'MAX(total)')) return self::$fixtures['matrix_columns'] ?? 1;
+            if (str_starts_with($sql, 'SELECT COUNT(*) FROM customers c')) return self::$fixtures['matrix_total'] ?? count(self::$fixtures['matrix_customers'] ?? []);
             if (self::$searchFixture && str_starts_with($sql, 'SELECT COUNT(*) FROM ')) {
                 $statement = self::listDatabase()->prepare($sql);
                 $statement->execute($params);

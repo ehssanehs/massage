@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""Real HTTP/MySQL verification of the follow-up matrix.
+
+Creates a uniquely named scratch database, seeds customers with 0, 1 and 3
+follow-ups, and proves over real HTTP that the pivot is correct: one row per
+customer (empty follow-ups included), one column per follow-up turn, each cell
+carrying the status, the Jalali due date and the full result text. Also proves
+the matrix is read-only and needs the follow-ups permission.
+
+Never touches .env or the production database; the scratch database is dropped.
+"""
+import os, re, socket, subprocess, tempfile, time, uuid
+from pathlib import Path
+from urllib.request import build_opener, HTTPCookieProcessor, HTTPRedirectHandler, Request
+from urllib.parse import urlencode
+from urllib.error import HTTPError
+
+ROOT = Path(__file__).resolve().parents[1]
+PHP = os.environ.get('PHP_BIN', 'php8.2')
+assertions = 0
+
+
+def check(condition, message):
+    global assertions
+    assertions += 1
+    if not condition:
+        raise AssertionError(message)
+
+
+def run(args, **kw):
+    return subprocess.run(args, cwd=ROOT, text=True, capture_output=True, **kw)
+
+
+def sql(db, statement):
+    result = run(['mysql', '-N', '-B', db, '-e', statement])
+    if result.returncode:
+        raise RuntimeError(f'{db}: {result.stderr}')
+    return result.stdout.strip()
+
+
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+class Server:
+    def __init__(self, db):
+        sock = socket.socket(); sock.bind(('127.0.0.1', 0))
+        self.port = sock.getsockname()[1]; sock.close()
+        self.log = tempfile.TemporaryFile()
+        self.proc = subprocess.Popen([PHP, '-S', f'127.0.0.1:{self.port}', '-t', 'public'],
+            cwd=ROOT, env={**os.environ, 'DB_DATABASE': db}, stdout=self.log, stderr=self.log)
+        self.opener = build_opener(HTTPCookieProcessor(), NoRedirect())
+        for _ in range(100):
+            try:
+                with socket.create_connection(('127.0.0.1', self.port), timeout=.2):
+                    break
+            except OSError:
+                time.sleep(.05)
+        else:
+            raise RuntimeError('PHP server not ready')
+
+    def req(self, route, data=None, **params):
+        url = f'http://127.0.0.1:{self.port}/index.php?' + urlencode({'r': route, **params})
+        request = Request(url, data=urlencode(data).encode() if data is not None else None)
+        try:
+            response = self.opener.open(request, timeout=20)
+        except HTTPError as e:
+            response = e
+        return response.code, response.read().decode(), response.headers
+
+    def login(self):
+        status, body, _ = self.req('login')
+        check(status == 200, 'login form renders')
+        token = re.search(r'name="_csrf" value="([^"]+)"', body)[1]
+        status, _, _ = self.req('login', {'_csrf': token, 'email': 'admin@example.com', 'password': 'password'})
+        check(status == 302, 'seeded admin logs in')
+
+    def close(self):
+        self.proc.terminate(); self.proc.wait(timeout=10); self.log.close()
+
+
+def main():
+    db = 'massage_matrix_test_' + uuid.uuid4().hex[:12]
+    server = None
+    try:
+        db_user = 'root'
+        env_file = ROOT / '.env'
+        if env_file.is_file():
+            match = re.search(r'^DB_USERNAME=(.*)$', env_file.read_text(), re.M)
+            if match and match.group(1).strip():
+                db_user = match.group(1).strip()
+        run(['mysql', '-e', f"CREATE DATABASE {db} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; "
+                            f"GRANT ALL ON {db}.* TO '{db_user}'@'localhost'"], check=True)
+        env = {**os.environ, 'DB_DATABASE': db}
+        installed = run([PHP, 'bin/console', 'install'], env=env)
+        check(installed.returncode == 0, f'install exits 0: {installed.stderr}')
+
+        # Three customers: no follow-up, one follow-up, three follow-ups.
+        sql(db, "INSERT INTO customers (customer_code,first_name,last_name,mobile,registration_date,status) VALUES "
+                "('C-MX-1','زهرا','کاظمی','09121111111','2026-03-01','active'),"
+                "('C-MX-2','محمد','رضایی','09122222222','2026-03-01','active'),"
+                "('C-MX-3','سمیرا','شریفی','09123333333','2026-03-01','inactive')")
+        ids = dict(line.split('\t') for line in sql(db, "SELECT customer_code, id FROM customers WHERE customer_code LIKE 'C-MX-%'").splitlines())
+        sql(db, f"INSERT INTO followups (customer_id,due_date,status,priority,result) VALUES "
+                f"({ids['C-MX-1']},'2026-03-21','booked','high','رزرو شد برای 2026-03-25'),"
+                f"({ids['C-MX-1']},'2026-04-05','contacted','normal','تماس گرفته شد'),"
+                f"({ids['C-MX-1']},'2026-05-01','refused','low','دیگر تماس نگیرید'),"
+                f"({ids['C-MX-2']},'2026-03-22','pending','normal',NULL)")
+
+        # Expected empty cells are derived from the real data (the seeder adds its
+        # own customers and follow-ups), not hardcoded.
+        counts = [int(line.split('\t')[1]) for line in sql(db, "SELECT customer_id, COUNT(*) FROM followups WHERE deleted_at IS NULL GROUP BY customer_id").splitlines() if line.strip()]
+        columns = max(counts) if counts else 0
+        customer_total = int(sql(db, 'SELECT COUNT(*) FROM customers WHERE deleted_at IS NULL'))
+        empty_expected = sum(max(0, columns - c) for c in counts) + (customer_total - len(counts)) * columns
+
+        server = Server(db)
+
+        # The matrix is behind the follow-ups permission.
+        status, _, headers = server.req('followups.matrix')
+        check(status == 302 and 'r=login' in (headers.get('Location') or ''), 'matrix requires login')
+
+        server.login()
+        status, body, _ = server.req('followups.matrix')
+        check(status == 200, f'matrix renders for an allowed user ({status})')
+        before = sql(db, 'SELECT COUNT(*), MAX(updated_at) FROM followups')
+
+        # Rows: every customer, including the one with no follow-up.
+        for name in ('زهرا کاظمی', 'محمد رضایی', 'سمیرا شریفی'):
+            check(name in body, f'{name} has a row')
+
+        # Columns: exactly the follow-up turns that exist, in order.
+        for turn in ('پیگیری ۱', 'پیگیری ۲', 'پیگیری ۳'):
+            check(turn in body, f'column {turn} exists')
+        check('پیگیری ۴' not in body, 'no column beyond the deepest follow-up chain')
+
+        # Cells: status, Jalali date and the FULL result text of each follow-up.
+        for label in ('رزرو شد', 'تماس گرفته شد', 'رد کرد', 'در انتظار'):
+            check(label in body, f'status «{label}» is rendered')
+        check('رزرو شد برای ۱۴۰۵/۰۱/۰۵' in body, 'the full result text is rendered (with its date in Jalali)')
+        check('دیگر تماس نگیرید' in body, 'the last follow-up result is rendered too')
+        check('بدون نتیجهٔ ثبت‌شده' in body, 'a follow-up without a result says so')
+        check('۱۴۰۵/۰۱/۰۱' in body, 'due dates render in Jalali')
+        check(body.count('matrix-empty') == empty_expected, f'missing turns stay visibly empty ({body.count("matrix-empty")} vs {empty_expected})')
+
+        # Read-only: rendering must not touch a single row.
+        check(sql(db, 'SELECT COUNT(*), MAX(updated_at) FROM followups') == before, 'the matrix writes nothing')
+        check('matrix-result' in body and '<form method="post"' not in body, 'no inline result form')
+
+        # Customer links, and search.
+        check(f"r=customers.show&id={ids['C-MX-1']}" in body, 'cells link to the customer file')
+        status, filtered, _ = server.req('followups.matrix', q='کاظمی')
+        check(status == 200 and 'زهرا کاظمی' in filtered, 'search by name keeps the matching customer')
+        check('سمیرا شریفی' not in filtered, 'search drops non-matching customers')
+        check('پیگیری ۳' in filtered, 'the column count stays global when a filter narrows the rows')
+
+        status, bad, _ = server.req('followups.matrix', q='x' * 400)
+        check(status == 400, 'an oversized search term is rejected')
+
+        # The list page offers the matrix, and the matrix offers the list.
+        _, list_page, _ = server.req('followups', filter='all')
+        check('r=followups.matrix' in list_page, 'the follow-up list links to the matrix')
+        check('r=followups&filter=active' in body, 'the matrix links back to the list')
+
+        print(f'OK: {assertions} follow-up matrix HTTP/MySQL assertions ({db})')
+    finally:
+        if server:
+            server.close()
+        run(['mysql', '-e', f'DROP DATABASE IF EXISTS {db}'])
+
+
+if __name__ == '__main__':
+    main()
