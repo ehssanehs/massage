@@ -20,6 +20,9 @@ def main():
         mod.sql('mysql', f"CREATE DATABASE {db} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL ON {db}.* TO 'massage_user'@'localhost'")
         result = mod.run(['php8.2', 'bin/console', 'install'], env={**os.environ, 'DB_DATABASE': db})
         assert result.returncode == 0, result.stderr
+        # A fresh install is empty by design; this suite edits a real follow-up.
+        demo = mod.run(['php8.2', 'bin/console', 'demo:seed'], env={**os.environ, 'DB_DATABASE': db})
+        assert demo.returncode == 0, demo.stderr
         server = mod.Server(db)
         server.login()
         status, page, _ = server.req('followups', filter='active')

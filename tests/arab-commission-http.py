@@ -44,6 +44,9 @@ def main():
             else:
                 result = run(['php8.2', 'bin/console', 'install'], env=env)
                 check(result.returncode == 0, result.stderr)
+                # A fresh install is empty; this suite works with real rows.
+                demo = run(['php8.2', 'bin/console', 'demo:seed'], env=env)
+                check(demo.returncode == 0, demo.stderr)
             for _ in range(2):
                 result = run(['php8.2', 'bin/console', 'migrate'], env=env)
                 check(result.returncode == 0, result.stderr)
