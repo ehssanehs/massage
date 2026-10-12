@@ -3,10 +3,11 @@ const assert = require('node:assert/strict');
 const {execFileSync} = require('node:child_process');
 const path = require('node:path');
 
-function route(get, post, session = {}, tenants = null) {
+function route(get, post, session = {}, tenants = null, scriptName = null) {
   const input = {get, session};
   if (post !== undefined) input.post = post;
   if (tenants) input.tenants = tenants;
+  if (scriptName) input.script_name = scriptName;
   const result = JSON.parse(execFileSync(process.env.PHP_BIN || 'php', [path.join(__dirname, 'route-harness.php'), JSON.stringify(input)], {cwd:path.join(__dirname, '..'), encoding:'utf8'}));
   assert.equal(result.error, null, JSON.stringify(result.error));
   return result;
@@ -70,4 +71,20 @@ test('a section URL redirects into that section when no session exists yet', () 
   const result = JSON.parse(execFileSync(process.env.PHP_BIN || 'php', [path.join(__dirname, 'route-harness.php'), JSON.stringify({get:{}, session:{}, tenants:BOTH, request_uri:'/women'})], {cwd:path.join(__dirname, '..'), encoding:'utf8'}));
   assert.equal(result.status, 302);
   assert.equal(result.session.tenant, 'women');
+});
+
+// Regression: from a subdirectory every root-absolute link pointed above the app,
+// so the home page rendered while staff login answered 404.
+test('links keep the mount point when the app is served from a subdirectory', () => {
+  const home = route({r:'home'}, undefined, {}, BOTH, '/massage/public/index.php');
+  assert.match(home.body, /href="\/massage\/public\/index\.php\?r=login"/);
+  assert.match(home.body, /href="\/massage\/public\/index\.php\?r=public\.massage"/);
+  assert.match(home.body, /href="\/massage\/public\/men\/index\.php\?r=login"/, 'the section entry point keeps the subdirectory');
+  assert.match(home.body, /"\/massage\/public\/assets\/css\/public\.css"/);
+  assert.doesNotMatch(home.body, /href="\/index\.php/, 'nothing points at the document root');
+
+  const crm = route({r:'customers'}, undefined, {uid:1, tenant:'men', _csrf:'t'}, BOTH, '/massage/public/men/index.php');
+  assert.match(crm.body, /"\/massage\/public\/men\/index\.php\?r=customers\.create"/, 'a section page is not double-prefixed');
+  assert.match(crm.body, /"\/massage\/public\/assets\/css\/app\.css"/);
+  assert.doesNotMatch(crm.body, /\/men\/men\//, 'the section segment is never duplicated');
 });

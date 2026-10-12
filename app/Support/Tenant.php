@@ -88,7 +88,7 @@ final class Tenant {
     /** Every protected page goes through here, so the section is never optional. */
     public static function requireSelected(): void {
         if (!self::isMulti() || self::current() !== null) return;
-        header('Location: /index.php?r=login');
+        header('Location: ' . \App\Support\Url::to('login'));
         exit;
     }
 

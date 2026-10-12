@@ -162,6 +162,61 @@ php bin/console user:password boss@women.local 'رمز-قوی' --tenant=women
 php8.2 -S 127.0.0.1:8080 -t public public/router.php
 ```
 
+### تنظیم وب‌سرور (مهم برای جلوگیری از خطای ۴۰۴)
+
+ریشهٔ سایت (DocumentRoot) باید پوشهٔ `public/` باشد، نه ریشهٔ پروژه.
+
+**Apache** — `.htaccess` فقط وقتی خوانده می‌شود که اجازه داده باشید:
+
+```apache
+<VirtualHost *:80>
+    ServerName example.com
+    DocumentRoot /var/www/massage/public
+
+    <Directory /var/www/massage/public>
+        AllowOverride All
+        Require all granted
+    </Directory>
+</VirtualHost>
+```
+
+```bash
+sudo a2enmod rewrite && sudo systemctl reload apache2
+```
+
+اگر `AllowOverride None` باشد، فایل `.htaccess` نادیده گرفته می‌شود. در این حالت هم
+مسیرهای `/men/` و `/women/` کار می‌کنند (آن‌ها فایل واقعی روی دیسک هستند) و فقط
+آدرس بدون اسلش `/men` نیاز به rewrite دارد.
+
+**nginx** — `try_files` را اضافه کنید:
+
+```nginx
+server {
+    server_name example.com;
+    root /var/www/massage/public;
+    index index.php;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+    }
+
+    location ~ /\. { deny all; }
+}
+```
+
+**نصب در زیرپوشه** (مثلاً `http://example.com/massage/`) هم پشتیبانی می‌شود:
+همهٔ لینک‌ها نسبت به محل نصب ساخته می‌شوند، پس نیازی به تنظیم اضافه نیست —
+فقط DocumentRoot را به همان زیرپوشه اشاره دهید یا پوشهٔ `public` را با نام
+دلخواه کپی کنید.
+
+> اگر سایت بالا می‌آید ولی با کلیک روی «ورود پرسنل» خطای ۴۰۴ می‌گیرید، یعنی
+> DocumentRoot به `public/` اشاره نمی‌کند یا وب‌سرور اجازهٔ rewrite ندارد.
+
 ### مرحله ۹: تنظیم مجوزهای فایل
 
 ```bash
