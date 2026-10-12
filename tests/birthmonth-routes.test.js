@@ -9,7 +9,7 @@ function route(query = {}, module = 'customers', fixtures = {}) {
     assert.equal(result.error, null, JSON.stringify(result.error));
     assert.notEqual(result.status, 500);
     assert.deepEqual(result.writes, [], 'filtering does not modify data');
-    const ids = [...result.body.replaceAll('&amp;', '&').matchAll(new RegExp(`href="index.php\\?r=${module}\\.show&id=(\\d+)"`, 'g'))].map(match => +match[1]);
+    const ids = [...result.body.replaceAll('&amp;', '&').matchAll(new RegExp(String.raw`href="[^"]*[?&]r=${module}\.show&id=(\d+)"`, 'g'))].map(match => +match[1]);
     return { ...result, ids };
 }
 const countQuery = result => result.queries.find(query => query.sql.startsWith('SELECT COUNT(*) FROM '));
@@ -83,7 +83,7 @@ test('month and q survive pagination, stale pages clamp, and reset removes every
     }
     const form = result.body.match(/<form method="get"[\s\S]*?<\/form>/)[0];
     assert.doesNotMatch(form, /name="page"/);
-    assert.match(result.body, /href="index.php\?r=customers">پاک‌کردن فیلترها<\/a>/);
+    assert.match(result.body, /href="[^"]*r=customers">پاک‌کردن فیلترها<\/a>/);
     const cleared = route();
     assert.match(cleared.body, /تعداد: ۳۷/);
     assert.match(dataQuery(cleared).sql, /OFFSET 0$/);

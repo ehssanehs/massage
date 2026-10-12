@@ -118,18 +118,48 @@ APP_URL=https://example.com
 
 DB_HOST=127.0.0.1
 DB_PORT=3306
-DB_DATABASE=massage_crm
 DB_USERNAME=massage_user
 DB_PASSWORD=رمز-ع-بور-قوی-شما
 
+# دو بخش مستقل: هر بخش دیتابیس و پرسنل و مدیر خودش را دارد.
+DB_DATABASE_MEN=massage_men
+DB_DATABASE_WOMEN=massage_women
+
 SESSION_SECURE=true
 ```
+
+> برای نصب تک‌بخشی (بدون تفکیک آقایان/خانم‌ها) هیچ‌کدام از `DB_DATABASE_MEN` و
+> `DB_DATABASE_WOMEN` را تعیین نکنید و فقط `DB_DATABASE=massage_crm` را بگذارید؛
+> در این حالت فرم ورود بخش نمی‌خواهد و همه‌چیز مثل قبل کار می‌کند.
 
 ### مرحله ۸: نصب سامانه
 
 ```bash
 cd /var/www/massage
 php bin/console install
+```
+
+این دستور هر دو بخش را می‌سازد و migrate می‌کند (به‌ترتیب آقایان و خانم‌ها).
+برای اجرای دستور روی یک بخش خاص از `--tenant=` استفاده کنید:
+
+```bash
+php bin/console migrate --tenant=women
+php bin/console user:password boss@women.local 'رمز-قوی' --tenant=women
+```
+
+### دو بخش مستقل (آقایان / خانم‌ها)
+
+- آدرس `/men` فقط بخش آقایان و `/women` فقط بخش خانم‌ها را باز می‌کند؛ هیچ‌کدام
+  به دیتابیس دیگری دسترسی ندارد. بخش انتخابی در نشست سرور نگه‌داری می‌شود و
+  با عوض‌کردن بخش، ورود قبلی باطل می‌شود.
+- هر بخش کاربران و مدیران جدا دارد؛ اطلاعات یک بخش در بخش دیگر دیده نمی‌شود.
+- صفحهٔ اصلی سایت (`/`) عمومی است و دو بخش «خدمات ماساژ» و «بخش آموزش» را
+  نشان می‌دهد؛ ورود پرسنل از همان صفحه انجام می‌شود.
+- اگر روی Apache اجرا می‌کنید، فایل `public/.htaccess` مسیرهای `/men` و
+  `/women` را هدایت می‌کند. برای اجرای محلی با سرور توکار PHP:
+
+```bash
+php8.2 -S 127.0.0.1:8080 -t public public/router.php
 ```
 
 ### مرحله ۹: تنظیم مجوزهای فایل

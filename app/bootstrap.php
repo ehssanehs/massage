@@ -33,19 +33,22 @@ function public_path(string $path = ''): string { return base_path('public' . ($
 function e(mixed $value): string { return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 function redirect(string $route, array $params = []): never {
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
-    $q = http_build_query(array_merge(['r'=>$route], $params));
+    // Absolute target: a relative "index.php?..." breaks on prefix URLs such as
+    // /men (no trailing slash), where the browser would resolve it one level up
+    // and drop the tenant from the address bar.
+    $target = url($route, $params);
     if (!headers_sent()) {
-        header('Location: index.php?' . $q);
+        header('Location: ' . $target);
     } else {
         // Output was already started (e.g. stray BOM/notice): fall back to a
         // client-side redirect so the user is not stuck on a stale page.
-        echo '<meta http-equiv="refresh" content="0;url=index.php?' . e($q) . '">'
-            . '<script>location.replace(' . json_encode('index.php?' . $q) . ');</script>';
+        echo '<meta http-equiv="refresh" content="0;url=' . e($target) . '">'
+            . '<script>location.replace(' . json_encode($target) . ');</script>';
     }
     exit;
 }
-function url(string $route, array $params = []): string { return 'index.php?' . http_build_query(array_merge(['r'=>$route], $params)); }
-function asset(string $path): string { return 'assets/' . ltrim($path, '/'); }
+function url(string $route, array $params = []): string { $prefix = \App\Support\Tenant::pathPrefix(); return ($prefix ?: '') . '/index.php?' . http_build_query(array_merge(['r'=>$route], $params)); }
+function asset(string $path): string { return '/assets/' . ltrim($path, '/'); }
 
 $lang = require base_path('config/lang/fa.php');
 function t(string $key, ?string $fallback = null): string { global $lang; return $lang[$key] ?? $fallback ?? $key; }

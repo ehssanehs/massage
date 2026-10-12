@@ -2,13 +2,16 @@
 namespace App\Core;
 use PDO;
 use PDOException;
+use App\Support\Tenant;
 
 final class DB {
     private static ?PDO $pdo = null;
+    /** Forget the cached connection (used when the CLI switches tenant). */
+    public static function reset(): void { self::$pdo = null; }
     public static function pdo(): PDO {
         if (self::$pdo) return self::$pdo;
         $host = env_value('DB_HOST','127.0.0.1'); $port = env_value('DB_PORT','3306');
-        $db = env_value('DB_DATABASE','massage_crm'); $user = env_value('DB_USERNAME','root'); $pass = env_value('DB_PASSWORD','');
+        $db = Tenant::databaseName(); $user = env_value('DB_USERNAME','root'); $pass = env_value('DB_PASSWORD','');
         $dsn = "mysql:host=$host;port=$port;dbname=$db;charset=utf8mb4";
         try {
             self::$pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES=>false]);
