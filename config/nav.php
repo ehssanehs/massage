@@ -5,6 +5,7 @@ return [
  ['route'=>'appointments','label'=>'نوبت‌ها','icon'=>'bi-calendar-week','perm'=>'appointments.view'],
  ['route'=>'sessions','label'=>'جلسات ماساژ','icon'=>'bi-clipboard2-pulse','perm'=>'sessions.view'],
  ['route'=>'followups','label'=>'مرکز پیگیری','icon'=>'bi-telephone-outbound','perm'=>'followups.view'],
+ ['route'=>'followups.matrix','label'=>'ماتریس پیگیری','icon'=>'bi-grid-3x3-gap','perm'=>'followups.view'],
  ['route'=>'retention','label'=>'نگهداشت مشتری','icon'=>'bi-heart-pulse','perm'=>'customers.view'],
  ['route'=>'services','label'=>'خدمات','icon'=>'bi-stars','perm'=>'services.view'],
  ['route'=>'therapists','label'=>'درمانگران','icon'=>'bi-person-badge','perm'=>'therapists.view'],

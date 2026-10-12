@@ -377,6 +377,138 @@ function render_module_list(string $module): string {
 </div>
 <?php return (string)ob_get_clean(); }
 
+/**
+ * Matrix view of the follow-up centre: one row per customer (including customers
+ * with no follow-up at all, whose cells stay empty) and one column per follow-up
+ * turn, so column N holds every customer's Nth follow-up. Read-only: each cell
+ * links back to the customer file.
+ */
+function render_followup_matrix(): string {
+    Auth::requireCan('followups.view');
+    $search = SearchQuery::fromInput($_GET['q'] ?? null);
+    $q = $search->value;
+    $errors = $search->error === null ? [] : [$search->error];
+
+    $pageValue = $_GET['page'] ?? '1';
+    $page = is_scalar($pageValue) ? max(1, (int)Jalali::en((string)$pageValue)) : 1;
+    $per = 20;
+
+    $where = 'c.deleted_at IS NULL';
+    $params = [];
+    if (!$errors && $q !== '') {
+        // Same compact-name rule as the customers list: the full name goes in as
+        // ONE expression so "محمد رضا" and "محمدرضا" both match.
+        [$predicate, $bind] = $search->predicate([
+            "CONCAT_WS(' ', c.first_name, c.last_name)",
+            'c.mobile',
+            'c.customer_code',
+        ], [1, 2]);
+        if ($predicate !== '') { $where .= " AND $predicate"; $params = $bind; }
+    }
+
+    // The column count is a GLOBAL maximum, not a per-page one, so the header
+    // does not shrink or grow as the user pages through customers.
+    $columns = (int)DB::value('SELECT COALESCE(MAX(total),0) FROM (SELECT COUNT(*) total FROM followups WHERE deleted_at IS NULL GROUP BY customer_id) counts');
+
+    $total = 0; $pages = 1; $rows = [];
+    if (!$errors) {
+        $total = (int)DB::value("SELECT COUNT(*) FROM customers c WHERE $where", $params);
+        $pages = max(1, (int)ceil($total / $per));
+        $page = min($page, $pages); // a stale page number must not show an empty table
+        $rows = DB::select("SELECT c.id, c.first_name, c.last_name, c.mobile, c.status FROM customers c WHERE $where ORDER BY c.last_name, c.first_name, c.id LIMIT $per OFFSET " . (($page - 1) * $per), $params);
+    } else {
+        http_response_code(400);
+        $page = 1;
+    }
+
+    // Every follow-up of the customers on this page in ONE query (no N+1), ordered
+    // so each customer's list is already 1st, 2nd, 3rd by due date.
+    $byCustomer = [];
+    if ($rows) {
+        $ids = array_map(static fn(array $row): int => (int)$row['id'], $rows);
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        foreach (DB::select("SELECT id, customer_id, due_date, status, result, priority FROM followups WHERE deleted_at IS NULL AND customer_id IN ($in) ORDER BY customer_id, due_date, id", $ids) as $f) {
+            $byCustomer[(int)$f['customer_id']][] = $f;
+        }
+    }
+
+    $statusMeta = [
+        'pending' => ['در انتظار', 'warning'],
+        'contacted' => ['تماس گرفته شد', 'info'],
+        'not_answered' => ['پاسخ نداد', 'dark'],
+        'interested' => ['علاقه‌مند', 'warning'],
+        'booked' => ['رزرو شد', 'success'],
+        'requested_later' => ['تماس بعداً', 'secondary'],
+        'refused' => ['رد کرد', 'danger'],
+    ];
+    $priorityMeta = ['high' => ['بالا', 'danger'], 'normal' => ['عادی', 'info'], 'low' => ['پایین', 'secondary']];
+
+    ob_start(); ?>
+<?php if ($errors): ?><div class="alert alert-danger" role="alert"><?=implode('<br>', array_map('e', $errors))?></div><?php endif;?>
+<div class="card p-3">
+  <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <form method="get" class="d-flex flex-wrap gap-2 align-items-center" role="search">
+      <input type="hidden" name="r" value="followups.matrix">
+      <input type="search" name="q" value="<?=e($q)?>" class="form-control w-auto" dir="auto" maxlength="<?=SearchQuery::MAX_LENGTH?>" placeholder="نام کامل، موبایل یا کد مشتری" aria-label="جستجوی مشتری در ماتریس پیگیری">
+      <button class="btn btn-soft">جستجو</button>
+      <?php if ($q !== '' || $errors): ?><a class="btn btn-soft" href="<?=e(url('followups.matrix'))?>">پاک‌کردن جستجو</a><?php endif; ?>
+    </form>
+    <div class="d-flex gap-2">
+      <a class="btn btn-soft" href="<?=url('followups',['filter'=>'active'])?>"><i class="bi bi-telephone-outbound"></i> نمایش فهرستی</a>
+      <span class="small text-muted align-self-center"><i class="bi bi-info-circle"></i> ستون‌ها به ترتیب پیگیری‌ها هستند (پیگیری ۱، ۲، ۳ ...)</span>
+    </div>
+  </div>
+  <div class="table-responsive matrix-scroll">
+    <table class="table align-middle matrix-table">
+      <thead>
+        <tr>
+          <th scope="col" class="matrix-customer-head">مشتری</th>
+          <?php for ($i = 1; $i <= $columns; $i++): ?>
+          <th scope="col" class="matrix-turn-head">پیگیری <?=Jalali::fa($i)?></th>
+          <?php endfor; ?>
+          <?php if ($columns === 0): ?><th scope="col" class="matrix-turn-head">پیگیری</th><?php endif; ?>
+        </tr>
+      </thead>
+      <tbody>
+      <?php foreach ($rows as $c):
+        $name = trim(($c['first_name'] ?? '') . ' ' . ($c['last_name'] ?? ''));
+        if ($name === '') $name = '—';
+        $turn = 0;
+      ?>
+        <tr>
+          <th scope="row" class="matrix-customer">
+            <a class="fw-bold text-decoration-none" href="<?=url('customers.show',['id'=>$c['id']])?>"><?=e($name)?></a>
+            <div class="small text-muted" dir="ltr"><?=e($c['mobile'] ?? '')?></div>
+            <a class="small text-decoration-none" href="<?=url('followups',['filter'=>'all','q'=>$name])?>"><i class="bi bi-telephone"></i> پیگیری‌ها</a>
+          </th>
+          <?php foreach (($byCustomer[(int)$c['id']] ?? []) as $f): $turn++;
+            [$label, $tone] = $statusMeta[(string)$f['status']] ?? [(string)$f['status'], 'secondary'];
+            $pLabel = $priorityMeta[(string)($f['priority'] ?? 'normal')][0] ?? 'عادی';
+          ?>
+          <td class="matrix-cell">
+            <span class="badge text-bg-<?=e($tone)?>"><?=e($label)?></span>
+            <span class="badge text-bg-light border matrix-priority" title="اولویت: <?=e($pLabel)?>"><?=e($pLabel)?></span>
+            <div class="matrix-date date-time"><?=Jalali::toJalali((string)$f['due_date'])?></div>
+            <?php if (trim((string)($f['result'] ?? '')) !== ''): ?>
+            <div class="matrix-result"><?=e(Jalali::datesInText((string)$f['result']))?></div>
+            <?php else: ?>
+            <div class="matrix-result text-muted">بدون نتیجهٔ ثبت‌شده</div>
+            <?php endif; ?>
+            <a class="matrix-link" href="<?=url('customers.show',['id'=>$c['id']])?>"><i class="bi bi-box-arrow-up-left"></i> پروندهٔ مشتری</a>
+          </td>
+          <?php endforeach; ?>
+          <?php for (; $turn < max($columns, 1); $turn++): ?><td class="matrix-cell matrix-empty">—</td><?php endfor; ?>
+        </tr>
+      <?php endforeach; ?>
+      <?php if (!$rows): ?><tr><td colspan="<?=max($columns, 1) + 1?>" class="empty py-4 text-center"><i class="bi bi-people fs-4 d-block mb-2"></i> مشتری‌ای با این مشخصات یافت نشد.</td></tr><?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+  <div class="small text-muted">تعداد مشتریان: <?=Jalali::fa($total)?> — ردیف‌های خالی یعنی برای آن مشتری در آن نوبت پیگیری‌ای ثبت نشده است.</div>
+  <?=render_pager('followups.matrix', $page, $pages, $q)?>
+</div>
+<?php return (string)ob_get_clean(); }
+
 function render_pager(string $module, int $page, int $pages, ?string $q, array $filters = []): string { if($pages<=1) return ''; $mk=function(int $p) use ($module,$q,$filters){ $params=$filters; if($q!==null&&$q!=='')$params['q']=$q; if($p>1)$params['page']=$p; return url($module,$params); }; $h='<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center mb-0">'; $h.='<li class="page-item '.($page<=1?'disabled':'').'"><a class="page-link" href="'.e($mk($page-1)).'">قبلی</a></li>'; $start=max(1,$page-2); $end=min($pages,$page+2); for($p=$start;$p<=$end;$p++){ $h.='<li class="page-item '.($p===$page?'active':'').'"><a class="page-link" href="'.e($mk($p)).'">'.Jalali::fa($p).'</a></li>'; } $h.='<li class="page-item '.($page>=$pages?'disabled':'').'"><a class="page-link" href="'.e($mk($page+1)).'">بعدی</a></li></ul></nav>'; return $h; }
 function module_form(string $module, ?int $id=null, array $errors=[]): string { global $modules; $def=$modules[$module]; $row=$id?DB::row('SELECT * FROM '.$def['table'].' WHERE id=?',[$id]):[]; ob_start(); if($errors) echo '<div class="alert alert-danger">'.implode('<br>',array_map('e',$errors)).'</div>'; ?><form method="post" class="card p-4"><?=View::csrf()?><div class="row g-3"><?php foreach($def['fields'] as $n=>$f): ?><div class="col-md-6 <?=($f[1]==='textarea'||$f[1]==='services_multi')?'col-lg-12':''?>"><?=input_html($n,$f,$errors && $f[1]==='checkbox' ? (($_POST[$n]??null)==='1' ? 1 : 0) : ($row[$n] ?? null))?></div><?php endforeach;?></div><div class="mt-4 d-flex gap-2"><button class="btn btn-primary">ذخیره</button><a class="btn btn-soft" href="<?=url($module)?>">انصراف</a></div></form><?php return (string)ob_get_clean(); }
 /** Virtual form-only fields handled by services, not persisted as columns. */
@@ -636,6 +768,7 @@ if($route==='dashboard'){ Auth::requireCan('dashboard.view'); $today=date('Y-m-d
 </div>
 <?php echo View::render('داشبورد', ob_get_clean()); exit; }
 if($route==='api.revenue'){ header('Content-Type: application/json'); $rows=DB::select("SELECT massage_date d, SUM(final_amount) v FROM massage_sessions WHERE massage_date>=DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND status='completed' GROUP BY massage_date ORDER BY massage_date"); echo json_encode(['labels'=>array_map(fn($r)=>Jalali::toJalali($r['d']),$rows),'values'=>array_map(fn($r)=>(float)$r['v'],$rows)], JSON_UNESCAPED_UNICODE); exit; }
+if($route==='followups.matrix'){ echo View::render('ماتریس پیگیری', render_followup_matrix()); exit; }
 if($route==='followups'){
     Auth::requireCan('followups.view');
     if($_SERVER['REQUEST_METHOD']==='POST'){
@@ -769,6 +902,7 @@ if($route==='followups'){
             <a class="btn <?=($filter==='today')?'btn-warning':'btn-soft'?>" href="<?=url('followups',['filter'=>'today'])?>"><i class="bi bi-calendar-event"></i> امروز</a>
             <a class="btn <?=($filter==='done')?'btn-primary':'btn-soft'?>" href="<?=url('followups',['filter'=>'done'])?>"><i class="bi bi-check2-all"></i> انجام شده</a>
             <a class="btn <?=($filter==='all')?'btn-primary':'btn-soft'?>" href="<?=url('followups',['filter'=>'all'])?>"><i class="bi bi-list-ul"></i> همه</a>
+            <a class="btn btn-soft" href="<?=url('followups.matrix')?>"><i class="bi bi-grid-3x3-gap"></i> نمایش ماتریسی</a>
           </div>
           <div class="d-flex gap-2">
             <span class="small text-muted align-self-center"><i class="bi bi-calendar3"></i> امروز: <?=e($todayStr)?></span>

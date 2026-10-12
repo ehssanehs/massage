@@ -387,6 +387,23 @@ html[data-bs-theme="dark"] .customer-birth-filter{background:rgba(124,58,237,.06
 .table th .sort-indicator{font-size:.8em;opacity:.7}
 .table th[aria-sort="ascending"] .sort-indicator, .table th[aria-sort="descending"] .sort-indicator{color:var(--primary);opacity:1}
 
+/* ===== FOLLOW-UP MATRIX ===== */
+/* Customers are rows and follow-up turns are columns, so the table is wider than
+   the viewport by design: the customer column stays pinned while the rest scrolls. */
+.matrix-scroll{max-height:75vh}
+.matrix-table{border-collapse:separate;border-spacing:0;min-width:100%}
+.matrix-table thead th{position:sticky;top:0;z-index:2;background:var(--bs-tertiary-bg,#f8f9fa);white-space:nowrap;border-bottom:2px solid var(--bs-border-color,#dee2e6)}
+.matrix-customer-head,.matrix-customer{position:sticky;inset-inline-start:0;z-index:1;background:var(--bs-body-bg,#fff);min-width:180px;max-width:220px;text-align:start}
+.matrix-customer-head{z-index:3}
+.matrix-customer{border-inline-end:2px solid var(--bs-border-color,#dee2e6)}
+.matrix-turn-head{min-width:210px}
+.matrix-cell{vertical-align:top;min-width:210px;max-width:260px}
+.matrix-empty{color:var(--bs-secondary-color,#6c757d);text-align:center}
+.matrix-date{margin-top:.35rem;font-size:.8rem;color:var(--bs-secondary-color,#6c757d)}
+.matrix-result{margin-top:.35rem;font-size:.85rem;line-height:1.75;white-space:normal;overflow-wrap:anywhere}
+.matrix-link{display:inline-block;margin-top:.4rem;font-size:.78rem;text-decoration:none}
+.matrix-priority{font-weight:400}
+
 /* ===== PRINT ===== */
 @media print{
     .sidebar,.topbar,.btn,form{display:none!important}
