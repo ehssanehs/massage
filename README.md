@@ -205,6 +205,10 @@ server {
         fastcgi_pass unix:/run/php/php8.2-fpm.sock;
     }
 
+    # Backup dumps must never be downloadable (Apache users get this from
+    # public/storage/.htaccess; nginx does not read .htaccess files).
+    location ^~ /storage/ { deny all; }
+
     location ~ /\. { deny all; }
 }
 ```
@@ -765,6 +769,40 @@ DB_DATABASE=massage_restore_check php bin/console backup:check
 ### بکاپ خودکار
 
 با تنظیم Cron Jobs که در بالا توضیح داده شد، بکاپ خودکار هر روز ساعت ۲ صبح انجام می‌شود.
+
+### اگر بکاپ قدیمی خطای ۱۰۶۴ داد
+
+اگر ابتدای فایل بکاپ خطی مثل زیر باشد، آن فایل با نسخهٔ قدیمی سامانه ساخته شده و
+خط اولش SQL نیست (هشدار خود `mysqldump` داخل فایل نوشته شده است):
+
+```
+mysqldump: [Warning] Using a password on the command line interface can be insecure.
+```
+
+این خط را حذف کنید و بعد ریستور کنید:
+
+```bash
+sed -i '/^mysqldump:/d' backup-YYYYMMDD-HHMMSS.sql
+mysql --default-character-set=utf8mb4 -u root -p DBNAME < backup-YYYYMMDD-HHMMSS.sql
+```
+
+پس از `git pull` این مشکل دیگر رخ نمی‌دهد؛ بکاپ‌های جدید مستقیماً قابل ریستورند.
+تست `python3 tests/backup-dump.py` یک چرخهٔ کامل بکاپ و ریستور را روی دیتابیس
+موقت بررسی می‌کند.
+
+### امنیت فایل‌های بکاپ
+
+فایل بکاپ همهٔ اطلاعات مشتریان و هش کاربران را دارد و نام فایل قابل حدس است
+(تاریخ و ساعت). پوشهٔ `public/storage/` هرگز نباید از اینترنت قابل دانلود باشد:
+
+- **Apache:** فایل `public/storage/.htaccess` این مسیر را می‌بندد (پس از `git pull` فعال است).
+- **nginx:** این بلوک را به کانفیگ اضافه کنید: `location ^~ /storage/ { deny all; }`
+- **توصیهٔ بهتر:** بکاپ را بیرون از وبروت نگه دارید. `BACKUP_PATH` مسیر مطلق را هم می‌پذیرد:
+  ```env
+  BACKUP_PATH=/var/backups/massage
+  ```
+
+با `curl -I http://your-domain/storage/backups/<file>.sql` بررسی کنید که پاسخ ۴۰۳ یا ۴۰۴ باشد، نه ۲۰۰.
 
 ---
 

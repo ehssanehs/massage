@@ -10,3 +10,6 @@ node_modules/
 # Local session files (fallback session storage)
 storage/sessions/*
 !storage/sessions/.gitkeep
+# Backups are data, never source
+storage/backups/*
+!storage/backups/.gitkeep
