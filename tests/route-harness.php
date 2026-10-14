@@ -25,6 +25,12 @@ namespace App\Core {
             // pivot depends on per-customer follow-up counts, which a single
             // generic fixture row cannot express.
             if (isset(self::$fixtures['matrix_customers']) && str_contains($sql, 'FROM customers c WHERE')) return self::$fixtures['matrix_customers'];
+            if (isset(self::$fixtures['matrix_followups']) && str_contains($sql, 'FROM followups WHERE id=?') && count($params) === 1) {
+                // The fixture list stands in for the followups table, so a by-id
+                // lookup must search it instead of falling back to the generic row.
+                foreach (self::$fixtures['matrix_followups'] as $row) if ((int)$row['id'] === (int)$params[0]) return [$row];
+                return [];
+            }
             if (isset(self::$fixtures['matrix_followups']) && str_contains($sql, 'FROM followups WHERE deleted_at IS NULL AND customer_id IN')) return self::$fixtures['matrix_followups'];
             if (self::$searchFixture && preg_match('/^SELECT (\w+)\.\*.*?\bFROM \1\b/s', $sql)) {
                 $statement = self::listDatabase()->prepare($sql);
@@ -90,6 +96,9 @@ namespace App\Core {
                 };
             }
             if (str_contains($sql, 'followup_interval_days')) return 30;
+            // Permission checks read the role's list; fixtures can narrow it so a
+            // suite can exercise a user who is not a super admin.
+            if (str_starts_with($sql, 'SELECT permissions FROM roles')) return self::$fixtures['role_permissions'] ?? '[]';
             if (str_contains($sql, 'SELECT is_arab_customer FROM customers')) return self::$fixtures['customers']['is_arab_customer'] ?? 0;
             if (str_contains($sql, 'credit_balance')) {
                 $fixture = self::$fixtures['customers'] ?? [];

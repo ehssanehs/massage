@@ -377,11 +377,80 @@ function render_module_list(string $module): string {
 </div>
 <?php return (string)ob_get_clean(); }
 
+/** A follow-up still awaiting a result: pending, or "call later" not yet contacted. */
+function followup_is_open(array $row): bool {
+    return $row['status'] === 'pending' || ($row['status'] === 'requested_later' && empty($row['contacted_at']));
+}
+/** Statuses that mean "a result was recorded" (the row leaves the active list). */
+const FOLLOWUP_RESULT_STATUSES = ['contacted', 'not_answered', 'interested', 'booked', 'refused', 'requested_later'];
+/** Every status an already-recorded follow-up may be corrected to. */
+const FOLLOWUP_EDIT_STATUSES = ['pending', 'contacted', 'not_answered', 'interested', 'booked', 'requested_later', 'refused'];
+
+/**
+ * Record the result of an open follow-up. Shared by the follow-up list and the
+ * matrix so both keep the same rules: only an open row may be recorded, only
+ * result statuses are accepted, a booked result adds its completion event, and
+ * any other status with a day count schedules the next follow-up.
+ * @return string message to show the user
+ */
+function followup_record_result(int $id, array $post): string {
+    $f = $id > 0 ? DB::row('SELECT * FROM followups WHERE id=? AND deleted_at IS NULL', [$id]) : null;
+    $status = $post['status'] ?? null;
+    if (!$f || !empty($f['deleted_at']) || !followup_is_open($f)
+        || !is_string($status) || !in_array($status, FOLLOWUP_RESULT_STATUSES, true)
+        || (isset($post['result']) && !is_string($post['result']))) {
+        return 'ثبت نتیجه پیگیری نامعتبر است.';
+    }
+    $now = date('Y-m-d H:i:s');
+    $updateData = ['status' => $status, 'updated_at' => $now, 'contacted_at' => $now];
+    if (isset($post['result'])) $updateData['result'] = Security::cleanString($post['result']);
+    DB::update('followups', $updateData, 'id=:id AND deleted_at IS NULL', ['id' => $id]);
+    DB::insert('customer_timeline', ['customer_id' => $f['customer_id'], 'type' => 'followup', 'title' => 'نتیجه پیگیری', 'body' => ($post['result'] ?? t($status, $status)), 'entity' => 'followups', 'entity_id' => $id, 'created_at' => $now]);
+    if ($status === 'booked') {
+        DB::insert('customer_timeline', ['customer_id' => $f['customer_id'], 'type' => 'followup_done', 'title' => 'پیگیری انجام شد', 'body' => 'نتیجه: رزرو شد', 'entity' => 'followups', 'entity_id' => $id, 'created_at' => $now]);
+    }
+    // Optional re-followup: any non-booked status + a day count creates the next record.
+    $reDays = (int)($post['refollow_days'] ?? 0);
+    if ($status !== 'booked' && $reDays > 0 && $reDays <= 365) {
+        $due = date('Y-m-d', strtotime("+{$reDays} days"));
+        $desc = trim((string)($f['description'] ?? ''));
+        $newDesc = 'پیگیری مجدد پس از تماس ' . date('Y-m-d') . ' — ' . ($desc !== '' ? $desc : 'بدون شرح قبلی');
+        DB::insert('followups', ['customer_id' => $f['customer_id'], 'session_id' => $f['session_id'] ?? null, 'due_date' => $due, 'status' => 'pending', 'priority' => $f['priority'] ?? 'normal', 'description' => $newDesc, 'assigned_to' => $f['assigned_to'] ?? null, 'created_at' => $now]);
+        DB::insert('customer_timeline', ['customer_id' => $f['customer_id'], 'type' => 'followup_scheduled', 'title' => 'پیگیری بعدی زمان‌بندی شد', 'body' => 'تاریخ پیگیری بعدی: ' . Jalali::toJalali($due) . ' (' . Jalali::fa($reDays) . ' روز دیگر)', 'entity' => 'followups', 'entity_id' => $id, 'created_at' => $now]);
+        return 'نتیجه ثبت شد و پیگیری بعدی برای ' . Jalali::toJalali($due) . ' ساخته شد.';
+    }
+    return 'نتیجه پیگیری ثبت شد.';
+}
+
+/**
+ * Correct an already-recorded follow-up (status and/or result). Only rows that
+ * already left the active list may be edited, so this can never create a second
+ * result where none was recorded.
+ * @return string message to show the user
+ */
+function followup_edit_result(int $id, array $post): string {
+    $current = $id > 0 ? DB::row('SELECT * FROM followups WHERE id=? AND deleted_at IS NULL', [$id]) : null;
+    $status = $post['status'] ?? null;
+    if (!$current || !empty($current['deleted_at']) || followup_is_open($current)
+        || !is_string($status) || !in_array($status, FOLLOWUP_EDIT_STATUSES, true)
+        || !is_string($post['result'] ?? null)) {
+        return 'ویرایش پیگیری نامعتبر است.';
+    }
+    $result = Security::cleanString($post['result']);
+    $now = date('Y-m-d H:i:s');
+    DB::update('followups', ['status' => $status, 'result' => $result, 'contacted_at' => $status === 'pending' ? null : (($current['contacted_at'] ?? null) ?: $now), 'updated_at' => $now], 'id=:id AND deleted_at IS NULL', ['id' => $id]);
+    $statusLabel = ['pending' => 'در انتظار', 'contacted' => 'تماس گرفته شد', 'not_answered' => 'پاسخ نداد', 'interested' => 'علاقه‌مند', 'booked' => 'رزرو شد', 'requested_later' => 'تماس بعداً', 'refused' => 'رد کرد'][$status];
+    $note = 'وضعیت: ' . $statusLabel . ($result !== '' ? ' — نتیجه: ' . $result : '');
+    DB::insert('customer_timeline', ['customer_id' => $current['customer_id'], 'type' => 'followup', 'title' => 'اصلاح نتیجه پیگیری', 'body' => $note, 'entity' => 'followups', 'entity_id' => $id, 'created_at' => $now]);
+    Audit::log('followups.edit', 'followups', $id, ['old_status' => $current['status'], 'new_status' => $status]);
+    return 'نتیجه پیگیری ویرایش شد.';
+}
+
 /**
  * Matrix view of the follow-up centre: one row per customer (including customers
  * with no follow-up at all, whose cells stay empty) and one column per follow-up
- * turn, so column N holds every customer's Nth follow-up. Read-only: each cell
- * links back to the customer file.
+ * turn, so column N holds every customer's Nth follow-up. Each cell can record
+ * the result of an open follow-up or correct one that is already recorded.
  */
 function render_followup_matrix(): string {
     Auth::requireCan('followups.view');
@@ -442,6 +511,11 @@ function render_followup_matrix(): string {
         'refused' => ['رد کرد', 'danger'],
     ];
     $priorityMeta = ['high' => ['بالا', 'danger'], 'normal' => ['عادی', 'info'], 'low' => ['پایین', 'secondary']];
+    $canManage = Auth::can('followups.manage');
+    // Keeps the user on the same rows after a cell form is submitted.
+    $returnParams = [];
+    if ($q !== '') $returnParams['q'] = $q;
+    if ($page > 1) $returnParams['page'] = $page;
 
     ob_start(); ?>
 <?php if ($errors): ?><div class="alert alert-danger" role="alert"><?=implode('<br>', array_map('e', $errors))?></div><?php endif;?>
@@ -484,6 +558,8 @@ function render_followup_matrix(): string {
           <?php foreach (($byCustomer[(int)$c['id']] ?? []) as $f): $turn++;
             [$label, $tone] = $statusMeta[(string)$f['status']] ?? [(string)$f['status'], 'secondary'];
             $pLabel = $priorityMeta[(string)($f['priority'] ?? 'normal')][0] ?? 'عادی';
+            $isOpen = followup_is_open($f);
+            $formId = 'mx-fu-' . (int)$f['id'];
           ?>
           <td class="matrix-cell">
             <span class="badge text-bg-<?=e($tone)?>"><?=e($label)?></span>
@@ -493,6 +569,48 @@ function render_followup_matrix(): string {
             <div class="matrix-result"><?=e(Jalali::datesInText((string)$f['result']))?></div>
             <?php else: ?>
             <div class="matrix-result text-muted">بدون نتیجهٔ ثبت‌شده</div>
+            <?php endif; ?>
+            <?php if ($canManage): ?>
+            <button type="button" class="btn btn-sm <?=$isOpen ? 'btn-primary' : 'btn-outline-primary'?> matrix-action d-block mt-1" data-bs-toggle="collapse" data-bs-target="#<?=e($formId)?>" aria-expanded="false" aria-controls="<?=e($formId)?>">
+              <i class="bi <?=$isOpen ? 'bi-pencil-square' : 'bi-pencil'?>"></i> <?=$isOpen ? 'ثبت نتیجه' : 'ویرایش نتیجه'?>
+            </button>
+            <div class="collapse" id="<?=e($formId)?>">
+              <?php if ($isOpen): ?>
+              <form method="post" class="followup-action-form matrix-form">
+                <?=View::csrf()?>
+                <input type="hidden" name="id" value="<?=(int)$f['id']?>">
+                <input type="hidden" name="matrix_action" value="record">
+                <label class="form-label small mb-1" for="<?=e($formId)?>-status">وضعیت</label>
+                <select name="status" id="<?=e($formId)?>-status" class="form-select form-select-sm fu-status-select mb-1">
+                  <option value="contacted">تماس گرفته شد</option>
+                  <option value="not_answered">پاسخ نداد</option>
+                  <option value="interested">علاقه‌مند</option>
+                  <option value="booked" class="text-success">رزرو شد ✓</option>
+                  <option value="requested_later">تماس بعداً</option>
+                  <option value="refused" class="text-danger">رد کرد</option>
+                </select>
+                <label class="form-label small mb-1" for="<?=e($formId)?>-result">نتیجه پیگیری</label>
+                <input name="result" id="<?=e($formId)?>-result" class="form-control form-control-sm mb-1" placeholder="یادداشت نتیجه...">
+                <input type="number" name="refollow_days" min="1" max="365" class="form-control form-control-sm fu-refollow-days d-none mb-1" placeholder="پیگیری مجدد بعد از چند روز؟" title="خالی = پیگیری مجدد ساخته نشود">
+                <button class="btn btn-sm btn-primary w-100"><i class="bi bi-check-lg"></i> ثبت نتیجه</button>
+              </form>
+              <?php else: ?>
+              <form method="post" class="matrix-form">
+                <?=View::csrf()?>
+                <input type="hidden" name="id" value="<?=(int)$f['id']?>">
+                <input type="hidden" name="matrix_action" value="edit">
+                <label class="form-label small mb-1" for="<?=e($formId)?>-edit-status">وضعیت</label>
+                <select name="status" id="<?=e($formId)?>-edit-status" class="form-select form-select-sm mb-1" required>
+                  <?php foreach (['pending'=>'در انتظار','contacted'=>'تماس گرفته شد','not_answered'=>'پاسخ نداد','interested'=>'علاقه‌مند','booked'=>'رزرو شد','requested_later'=>'تماس بعداً','refused'=>'رد کرد'] as $value=>$statusLabel): ?>
+                  <option value="<?=e($value)?>" <?=(string)$f['status']===$value?'selected':''?>><?=e($statusLabel)?></option>
+                  <?php endforeach; ?>
+                </select>
+                <label class="form-label small mb-1" for="<?=e($formId)?>-edit-result">نتیجه پیگیری</label>
+                <input name="result" id="<?=e($formId)?>-edit-result" class="form-control form-control-sm mb-1" value="<?=e(Jalali::datesInText((string)($f['result'] ?? '')))?>" placeholder="یادداشت نتیجه...">
+                <button class="btn btn-sm btn-primary w-100"><i class="bi bi-check-lg"></i> ذخیره تغییرات</button>
+              </form>
+              <?php endif; ?>
+            </div>
             <?php endif; ?>
             <a class="matrix-link" href="<?=url('customers.show',['id'=>$c['id']])?>"><i class="bi bi-box-arrow-up-left"></i> پروندهٔ مشتری</a>
           </td>
@@ -768,7 +886,28 @@ if($route==='dashboard'){ Auth::requireCan('dashboard.view'); $today=date('Y-m-d
 </div>
 <?php echo View::render('داشبورد', ob_get_clean()); exit; }
 if($route==='api.revenue'){ header('Content-Type: application/json'); $rows=DB::select("SELECT massage_date d, SUM(final_amount) v FROM massage_sessions WHERE massage_date>=DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND status='completed' GROUP BY massage_date ORDER BY massage_date"); echo json_encode(['labels'=>array_map(fn($r)=>Jalali::toJalali($r['d']),$rows),'values'=>array_map(fn($r)=>(float)$r['v'],$rows)], JSON_UNESCAPED_UNICODE); exit; }
-if($route==='followups.matrix'){ echo View::render('ماتریس پیگیری', render_followup_matrix()); exit; }
+if($route==='followups.matrix'){
+    Auth::requireCan('followups.view');
+    if($_SERVER['REQUEST_METHOD']==='POST'){
+        Auth::requireCan('followups.manage');
+        $id=(int)($_POST['id']??0);
+        $action=(string)($_POST['matrix_action']??'');
+        $message=match($action){
+            'record'=>followup_record_result($id,$_POST),
+            'edit'=>followup_edit_result($id,$_POST),
+            default=>'درخواست نامعتبر است.',
+        };
+        toast($message);
+        // Stay on the same page and search the user was looking at.
+        $return=[];
+        $backQ=trim((string)Security::cleanString(isset($_GET['q']) ? (string)$_GET['q'] : ''));
+        if($backQ!=='') $return['q']=$backQ;
+        $backPage=(int)Jalali::en((string)($_GET['page']??'1'));
+        if($backPage>1) $return['page']=$backPage;
+        redirect('followups.matrix',$return);
+    }
+    echo View::render('ماتریس پیگیری', render_followup_matrix()); exit;
+}
 if($route==='followups'){
     Auth::requireCan('followups.view');
     if($_SERVER['REQUEST_METHOD']==='POST'){
@@ -789,52 +928,11 @@ if($route==='followups'){
         }
         $id=(int)($_POST['id']??0);
         if(isset($_POST['edit_result'])){
-            $current=$id>0 ? DB::row('SELECT * FROM followups WHERE id=? AND deleted_at IS NULL',[$id]) : null;
-            $status=$_POST['status']??null;
-            $allowed=['pending','contacted','not_answered','interested','booked','requested_later','refused'];
-            if(!$current || !empty($current['deleted_at']) || ($current['status']==='pending' || ($current['status']==='requested_later' && empty($current['contacted_at']))) || !is_string($status) || !in_array($status,$allowed,true) || !is_string($_POST['result']??null)){
-                toast('ویرایش پیگیری نامعتبر است.');
-            } else {
-                $result=Security::cleanString($_POST['result']);
-                $now=date('Y-m-d H:i:s');
-                DB::update('followups',['status'=>$status,'result'=>$result,'contacted_at'=>$status==='pending'?null:($current['contacted_at']?:$now),'updated_at'=>$now],'id=:id AND deleted_at IS NULL',['id'=>$id]);
-                $statusLabel=['pending'=>'در انتظار','contacted'=>'تماس گرفته شد','not_answered'=>'پاسخ نداد','interested'=>'علاقه‌مند','booked'=>'رزرو شد','requested_later'=>'تماس بعداً','refused'=>'رد کرد'][$status];
-                $note='وضعیت: '.$statusLabel.($result!==''?' — نتیجه: '.$result:'');
-                DB::insert('customer_timeline',['customer_id'=>$current['customer_id'],'type'=>'followup','title'=>'اصلاح نتیجه پیگیری','body'=>$note,'entity'=>'followups','entity_id'=>$id,'created_at'=>$now]);
-                Audit::log('followups.edit','followups',$id,['old_status'=>$current['status'],'new_status'=>$status]);
-                toast('نتیجه پیگیری ویرایش شد.');
-            }
+            toast(followup_edit_result($id,$_POST));
             redirect('followups', ['filter'=>$_GET['filter']??'done','q'=>$_GET['q']??'']);
         }
         if($id){
-            $f=DB::row('SELECT * FROM followups WHERE id=? AND deleted_at IS NULL',[$id]);
-            $status=$_POST['status']??null;
-            if(!$f || !empty($f['deleted_at']) || !($f['status']==='pending' || ($f['status']==='requested_later' && empty($f['contacted_at']))) || !is_string($status) || !in_array($status,['contacted','not_answered','interested','booked','refused','requested_later'],true) || (isset($_POST['result']) && !is_string($_POST['result']))){
-                toast('ثبت نتیجه پیگیری نامعتبر است.');
-                redirect('followups', ['filter'=>$_GET['filter']??'active','q'=>$_GET['q']??'']);
-            }
-            $updateData=['status'=>$status,'updated_at'=>date('Y-m-d H:i:s')];
-            if(isset($_POST['result']))$updateData['result']=Security::cleanString($_POST['result']);
-            $updateData['contacted_at']=date('Y-m-d H:i:s');
-            DB::update('followups',$updateData,'id=:id AND deleted_at IS NULL',['id'=>$id]);
-            if($f){
-                DB::insert('customer_timeline',['customer_id'=>$f['customer_id'],'type'=>'followup','title'=>'نتیجه پیگیری','body'=>($_POST['result']??t($_POST['status'],$_POST['status'])),'entity'=>'followups','entity_id'=>$id,'created_at'=>date('Y-m-d H:i:s')]);
-                if($_POST['status']==='booked'){
-                    DB::insert('customer_timeline',['customer_id'=>$f['customer_id'],'type'=>'followup_done','title'=>'پیگیری انجام شد','body'=>'نتیجه: رزرو شد','entity'=>'followups','entity_id'=>$id,'created_at'=>date('Y-m-d H:i:s')]);
-                }
-                // Optional re-followup: any non-booked status + a day count creates the next followup record.
-                $reDays=(int)($_POST['refollow_days']??0);
-                if($_POST['status']!=='booked' && $reDays>0 && $reDays<=365){
-                    $due=date('Y-m-d', strtotime("+{$reDays} days"));
-                    $desc=trim(($f['description']??''));
-                    $newDesc='پیگیری مجدد پس از تماس '.date('Y-m-d').' — '.($desc!==''?$desc:'بدون شرح قبلی');
-                    DB::insert('followups',['customer_id'=>$f['customer_id'],'session_id'=>$f['session_id']??null,'due_date'=>$due,'status'=>'pending','priority'=>$f['priority']??'normal','description'=>$newDesc,'assigned_to'=>$f['assigned_to']??null,'created_at'=>date('Y-m-d H:i:s')]);
-                    DB::insert('customer_timeline',['customer_id'=>$f['customer_id'],'type'=>'followup_scheduled','title'=>'پیگیری بعدی زمان‌بندی شد','body'=>'تاریخ پیگیری بعدی: '.Jalali::toJalali($due).' ('.Jalali::fa($reDays).' روز دیگر)','entity'=>'followups','entity_id'=>$id,'created_at'=>date('Y-m-d H:i:s')]);
-                    toast('نتیجه ثبت شد و پیگیری بعدی برای '.Jalali::toJalali($due).' ساخته شد.');
-                } else {
-                    toast('نتیجه پیگیری ثبت شد.');
-                }
-            }
+            toast(followup_record_result($id,$_POST));
         }
         redirect('followups', ['filter'=>$_GET['filter']??'active','q'=>$_GET['q']??'']);
     }
