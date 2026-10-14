@@ -69,11 +69,13 @@ class Server:
             response = e
         return response.code, response.read().decode(), response.headers
 
+    def csrf(self, body):
+        return re.search(r'name="_csrf" value="([^"]+)"', body)[1]
+
     def login(self):
         status, body, _ = self.req('login')
         check(status == 200, 'login form renders')
-        token = re.search(r'name="_csrf" value="([^"]+)"', body)[1]
-        status, _, _ = self.req('login', {'_csrf': token, 'email': 'admin@example.com', 'password': 'password'})
+        status, _, _ = self.req('login', {'_csrf': self.csrf(body), 'email': 'admin@example.com', 'password': 'password'})
         check(status == 302, 'seeded admin logs in')
 
     def close(self):
@@ -144,9 +146,9 @@ def main():
         check('۱۴۰۵/۰۱/۰۱' in body, 'due dates render in Jalali')
         check(body.count('matrix-empty') == empty_expected, f'missing turns stay visibly empty ({body.count("matrix-empty")} vs {empty_expected})')
 
-        # Read-only: rendering must not touch a single row.
-        check(sql(db, 'SELECT COUNT(*), MAX(updated_at) FROM followups') == before, 'the matrix writes nothing')
-        check('matrix-result' in body and '<form method="post"' not in body, 'no inline result form')
+        # Read-only checks: rendering must not touch a single row.
+        check(sql(db, 'SELECT COUNT(*), MAX(updated_at) FROM followups') == before, 'opening the matrix writes nothing')
+        check('matrix-result' in body, 'cells show the result')
 
         # Customer links, and search.
         check(f"r=customers.show&id={ids['C-MX-1']}" in body, 'cells link to the customer file')
@@ -162,6 +164,49 @@ def main():
         _, list_page, _ = server.req('followups', filter='all')
         check('r=followups.matrix' in list_page, 'the follow-up list links to the matrix')
         check('r=followups&filter=active' in body, 'the matrix links back to the list')
+
+        # --- recording a result from inside a cell -----------------------------
+        pending_id = ids['C-MX-2']  # customer 2 carries the single pending follow-up
+        pending = sql(db, f'SELECT id FROM followups WHERE customer_id={pending_id} AND status=\'pending\'')
+        check(pending != '', 'the pending follow-up exists')
+        token = server.csrf(body)
+        status, _, headers = server.req('followups.matrix', {
+            '_csrf': token, 'id': pending, 'matrix_action': 'record', 'status': 'booked', 'result': 'رزرو از ماتریس',
+        }, q='رضایی', page='1')
+        check(status == 302, 'recording from a cell redirects')
+        check(sql(db, f"SELECT status,result FROM followups WHERE id={pending}") == 'booked\tرزرو از ماتریس',
+              'the result and status are stored')
+        check(sql(db, f'SELECT COUNT(*) FROM customer_timeline WHERE entity=\'followups\' AND entity_id={pending} AND title=\'نتیجه پیگیری\'') == '1',
+              'the result is written to the customer timeline')
+        check(sql(db, f'SELECT COUNT(*) FROM customer_timeline WHERE entity=\'followups\' AND entity_id={pending} AND title=\'پیگیری انجام شد\'') == '1',
+              'a booked result records its completion event exactly once')
+        location = headers.get('Location') or ''
+        check('r=followups.matrix' in location, f'the user returns to the matrix (got {location})')
+
+        # The cell now offers correction instead of recording, and editing works.
+        status, refreshed, _ = server.req('followups.matrix', q='رضایی')
+        check('value="edit"' in refreshed and 'value="record"' not in refreshed,
+              'a recorded follow-up offers editing, not recording')
+        token = server.csrf(refreshed)
+        status, _, _ = server.req('followups.matrix', {
+            '_csrf': token, 'id': pending, 'matrix_action': 'edit', 'status': 'refused', 'result': 'اصلاح از ماتریس',
+        }, q='رضایی')
+        check(status == 302, 'editing from a cell redirects')
+        check(sql(db, f"SELECT status,result FROM followups WHERE id={pending}") == 'refused\tاصلاح از ماتریس',
+              'the correction is stored')
+        check(sql(db, f'SELECT COUNT(*) FROM customer_timeline WHERE entity=\'followups\' AND entity_id={pending} AND title=\'اصلاح نتیجه پیگیری\'') == '1',
+              'the correction is recorded in the timeline')
+        check(sql(db, f"SELECT COUNT(*) FROM audit_logs WHERE action='followups.edit' AND entity_id={pending}") == '1',
+              'the correction is audited')
+
+        # Recording an already-recorded row must not create a second result.
+        token = server.csrf(refreshed)
+        status, _, _ = server.req('followups.matrix', {
+            '_csrf': token, 'id': pending, 'matrix_action': 'record', 'status': 'booked', 'result': 'دوباره',
+        })
+        check(status == 302, 'the invalid recording is answered with a redirect, not an error page')
+        check(sql(db, f"SELECT COUNT(*) FROM customer_timeline WHERE entity='followups' AND entity_id={pending} AND title='پیگیری انجام شد'") == '1',
+              'a refused recording adds no completion event')
 
         print(f'OK: {assertions} follow-up matrix HTTP/MySQL assertions ({db})')
     finally:

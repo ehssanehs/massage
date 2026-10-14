@@ -403,6 +403,11 @@ html[data-bs-theme="dark"] .customer-birth-filter{background:rgba(124,58,237,.06
 .matrix-result{margin-top:.35rem;font-size:.85rem;line-height:1.75;white-space:normal;overflow-wrap:anywhere}
 .matrix-link{display:inline-block;margin-top:.4rem;font-size:.78rem;text-decoration:none}
 .matrix-priority{font-weight:400}
+/* In-cell record/edit form: compact enough to live inside a narrow matrix cell. */
+.matrix-action{font-size:.75rem;padding:.15rem .5rem}
+.matrix-form{margin-top:.4rem;padding:.55rem;border:1px solid var(--bs-border-color,#dee2e6);border-radius:.55rem;background:var(--bs-tertiary-bg,#f8f9fa);min-width:185px}
+.matrix-form .form-label{margin-bottom:.15rem}
+.matrix-form .form-control,.matrix-form .form-select{font-size:.8rem}
 
 /* ===== PRINT ===== */
 @media print{
