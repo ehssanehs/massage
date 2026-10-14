@@ -447,10 +447,55 @@ function followup_edit_result(int $id, array $post): string {
 }
 
 /**
+ * Create a follow-up by hand. Shared by the follow-up centre (its top form and
+ * the per-row button) and the matrix, so all three entry points behave the same:
+ * a Jalali due date that must parse, a priority from the fixed set, an optional
+ * note, and a timeline entry recording who scheduled it.
+ * @return array{0:string,1:?int} message for the user and the new id (null when nothing was created)
+ */
+function followup_create_manual(int $customerId, array $post): array {
+    if ($customerId <= 0 || !record_exists('customers', $customerId)) return ['مشتری یافت نشد.', null];
+    $due = Jalali::toGregorian(is_string($post['due_date'] ?? null) ? $post['due_date'] : null);
+    if ($due === null) return ['تاریخ سررسید باید یک تاریخ شمسی معتبر (سال/ماه/روز) باشد.', null];
+    $priority = $post['priority'] ?? 'normal';
+    if (!is_string($priority) || !in_array($priority, ['high', 'normal', 'low'], true)) $priority = 'normal';
+    $description = isset($post['description']) && is_string($post['description'])
+        ? (string)Security::cleanString($post['description']) : '';
+    $now = date('Y-m-d H:i:s');
+    $id = DB::insert('followups', [
+        'customer_id' => $customerId,
+        'due_date' => $due,
+        'status' => 'pending',
+        'priority' => $priority,
+        'description' => $description,
+        'assigned_to' => Auth::id(),
+        'created_at' => $now,
+    ]);
+    DB::insert('customer_timeline', [
+        'customer_id' => $customerId,
+        'type' => 'followup_created',
+        'title' => 'پیگیری دستی ثبت شد',
+        'body' => 'تاریخ پیگیری: ' . Jalali::toJalali($due) . ($description !== '' ? ' — ' . $description : ''),
+        'entity' => 'followups',
+        'entity_id' => $id,
+        'created_by' => Auth::id(),
+        'created_at' => $now,
+    ]);
+    Audit::log('followups.create', 'followups', $id);
+    return ['پیگیری جدید برای ' . Jalali::toJalali($due) . ' ثبت شد.', $id];
+}
+
+/** Today as Jalali text — the default due date of a manually created follow-up. */
+function followup_default_due_date(): string {
+    return Jalali::toJalali(date('Y-m-d'));
+}
+
+/**
  * Matrix view of the follow-up centre: one row per customer (including customers
  * with no follow-up at all, whose cells stay empty) and one column per follow-up
  * turn, so column N holds every customer's Nth follow-up. Each cell can record
- * the result of an open follow-up or correct one that is already recorded.
+ * the result of an open follow-up or correct one that is already recorded, and
+ * the first empty turn of every row creates the next follow-up by hand.
  */
 function render_followup_matrix(): string {
     Auth::requireCan('followups.view');
@@ -512,6 +557,10 @@ function render_followup_matrix(): string {
     ];
     $priorityMeta = ['high' => ['بالا', 'danger'], 'normal' => ['عادی', 'info'], 'low' => ['پایین', 'secondary']];
     $canManage = Auth::can('followups.manage');
+    // One turn beyond the deepest chain, so every row always has an empty cell to
+    // create its next follow-up in — including the busiest customer.
+    $turns = $columns + 1;
+    $defaultDue = followup_default_due_date();
     // Keeps the user on the same rows after a cell form is submitted.
     $returnParams = [];
     if ($q !== '') $returnParams['q'] = $q;
@@ -537,10 +586,9 @@ function render_followup_matrix(): string {
       <thead>
         <tr>
           <th scope="col" class="matrix-customer-head">مشتری</th>
-          <?php for ($i = 1; $i <= $columns; $i++): ?>
+          <?php for ($i = 1; $i <= $turns; $i++): ?>
           <th scope="col" class="matrix-turn-head">پیگیری <?=Jalali::fa($i)?></th>
           <?php endfor; ?>
-          <?php if ($columns === 0): ?><th scope="col" class="matrix-turn-head">پیگیری</th><?php endif; ?>
         </tr>
       </thead>
       <tbody>
@@ -615,14 +663,40 @@ function render_followup_matrix(): string {
             <a class="matrix-link" href="<?=url('customers.show',['id'=>$c['id']])?>"><i class="bi bi-box-arrow-up-left"></i> پروندهٔ مشتری</a>
           </td>
           <?php endforeach; ?>
-          <?php for (; $turn < max($columns, 1); $turn++): ?><td class="matrix-cell matrix-empty">—</td><?php endfor; ?>
+          <?php if ($canManage): $createId = 'mx-new-' . (int)$c['id']; ?>
+          <td class="matrix-cell matrix-create">
+            <button type="button" class="btn btn-sm btn-outline-success matrix-action d-block" data-bs-toggle="collapse" data-bs-target="#<?=e($createId)?>" aria-expanded="false" aria-controls="<?=e($createId)?>">
+              <i class="bi bi-plus-lg"></i> ایجاد پیگیری
+            </button>
+            <div class="collapse" id="<?=e($createId)?>">
+              <form method="post" class="matrix-form">
+                <?=View::csrf()?>
+                <input type="hidden" name="customer_id" value="<?=(int)$c['id']?>">
+                <input type="hidden" name="matrix_action" value="create">
+                <label class="form-label small mb-1" for="<?=e($createId)?>-due">تاریخ سررسید</label>
+                <?=View::dateInput('due_date', $defaultDue, true, $createId . '-due')?>
+                <label class="form-label small mb-1 mt-1" for="<?=e($createId)?>-priority">اولویت</label>
+                <select name="priority" id="<?=e($createId)?>-priority" class="form-select form-select-sm mb-1">
+                  <option value="normal">عادی</option>
+                  <option value="high">بالا</option>
+                  <option value="low">پایین</option>
+                </select>
+                <label class="form-label small mb-1" for="<?=e($createId)?>-desc">شرح</label>
+                <input name="description" id="<?=e($createId)?>-desc" class="form-control form-control-sm mb-1" placeholder="مثلاً: پیگیری تلفنی سفارش">
+                <button class="btn btn-sm btn-success w-100"><i class="bi bi-plus-lg"></i> ثبت پیگیری</button>
+              </form>
+            </div>
+          </td>
+          <?php $turn++; ?>
+          <?php endif; ?>
+          <?php for (; $turn < $turns; $turn++): ?><td class="matrix-cell matrix-empty">—</td><?php endfor; ?>
         </tr>
       <?php endforeach; ?>
-      <?php if (!$rows): ?><tr><td colspan="<?=max($columns, 1) + 1?>" class="empty py-4 text-center"><i class="bi bi-people fs-4 d-block mb-2"></i> مشتری‌ای با این مشخصات یافت نشد.</td></tr><?php endif; ?>
+      <?php if (!$rows): ?><tr><td colspan="<?=$turns + 1?>" class="empty py-4 text-center"><i class="bi bi-people fs-4 d-block mb-2"></i> مشتری‌ای با این مشخصات یافت نشد.</td></tr><?php endif; ?>
       </tbody>
     </table>
   </div>
-  <div class="small text-muted">تعداد مشتریان: <?=Jalali::fa($total)?> — ردیف‌های خالی یعنی برای آن مشتری در آن نوبت پیگیری‌ای ثبت نشده است.</div>
+  <div class="small text-muted">تعداد مشتریان: <?=Jalali::fa($total)?> — ردیف‌های خالی یعنی برای آن مشتری در آن نوبت پیگیری‌ای ثبت نشده است.<?=$canManage ? ' دکمهٔ «ایجاد پیگیری» در اولین خانهٔ خالی هر مشتری، پیگیری بعدی را به‌صورت دستی ثبت می‌کند.' : ''?></div>
   <?=render_pager('followups.matrix', $page, $pages, $q)?>
 </div>
 <?php return (string)ob_get_clean(); }
@@ -895,6 +969,7 @@ if($route==='followups.matrix'){
         $message=match($action){
             'record'=>followup_record_result($id,$_POST),
             'edit'=>followup_edit_result($id,$_POST),
+            'create'=>followup_create_manual((int)($_POST['customer_id']??0),$_POST)[0],
             default=>'درخواست نامعتبر است.',
         };
         toast($message);
@@ -927,6 +1002,13 @@ if($route==='followups'){
             redirect('followups', ['filter'=>$_GET['filter']??'active','q'=>$_GET['q']??'']);
         }
         $id=(int)($_POST['id']??0);
+        // Manual follow-up creation: used by the top form and by the per-row
+        // «پیگیری جدید» button, which simply posts the row's customer id.
+        if(isset($_POST['create_followup'])){
+            [$message]=followup_create_manual((int)($_POST['customer_id']??0),$_POST);
+            toast($message);
+            redirect('followups', ['filter'=>$_GET['filter']??'active','q'=>$_GET['q']??'']);
+        }
         if(isset($_POST['edit_result'])){
             toast(followup_edit_result($id,$_POST));
             redirect('followups', ['filter'=>$_GET['filter']??'done','q'=>$_GET['q']??'']);
@@ -1004,6 +1086,9 @@ if($route==='followups'){
           </div>
           <div class="d-flex gap-2">
             <span class="small text-muted align-self-center"><i class="bi bi-calendar3"></i> امروز: <?=e($todayStr)?></span>
+            <?php if(Auth::can('followups.manage')): ?>
+            <button type="button" class="btn btn-sm btn-success" data-bs-toggle="collapse" data-bs-target="#fuNewFollowup" aria-expanded="false" aria-controls="fuNewFollowup"><i class="bi bi-plus-lg"></i> پیگیری جدید</button>
+            <?php endif; ?>
             <a class="btn btn-sm btn-outline-secondary" href="<?=url('followups',['generate'=>1,'filter'=>$filter])?>" onclick="return confirm('پیگیری‌های جاافتاده از جلسات قبلی ساخته شوند؟')"><i class="bi bi-plus-circle"></i> ساخت پیگیری‌های جاافتاده</a>
           </div>
         </div>
@@ -1028,6 +1113,47 @@ if($route==='followups'){
           </div>
         </form>
       </div>
+
+      <?php if(Auth::can('followups.manage')): ?>
+      <div class="collapse" id="fuNewFollowup">
+        <div class="card p-3 mb-4 border-success">
+          <h5 class="mb-3"><i class="bi bi-plus-lg text-success"></i> افزودن پیگیری جدید</h5>
+          <form method="post" class="row g-2 align-items-end">
+            <?=View::csrf()?>
+            <input type="hidden" name="create_followup" value="1">
+            <input type="hidden" name="filter" value="<?=e($filter)?>">
+            <div class="col-md-4">
+              <label class="form-label" for="nf_customer">مشتری <span class="text-danger">*</span></label>
+              <select id="nf_customer" name="customer_id" class="form-select" required>
+                <option value="">— انتخاب کنید —</option>
+                <?php foreach(options('customer') as $o): ?><option value="<?=(int)$o['id']?>"><?=e((string)$o['label'])?></option><?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="nf_due">تاریخ سررسید <span class="text-danger">*</span></label>
+              <?=View::dateInput('due_date', followup_default_due_date(), true, 'nf_due')?>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label" for="nf_priority">اولویت</label>
+              <select id="nf_priority" name="priority" class="form-select">
+                <option value="normal">عادی</option>
+                <option value="high">بالا</option>
+                <option value="low">پایین</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="nf_desc">شرح</label>
+              <input id="nf_desc" name="description" class="form-control" placeholder="مثلاً: پیگیری تلفنی سفارش">
+            </div>
+            <div class="col-12 d-flex gap-2 mt-2">
+              <button class="btn btn-success"><i class="bi bi-check-lg"></i> ثبت پیگیری</button>
+              <button type="button" class="btn btn-soft" data-bs-toggle="collapse" data-bs-target="#fuNewFollowup">انصراف</button>
+            </div>
+          </form>
+          <div class="small text-muted mt-2">اگر مشتری‌ای پیگیری فعال ندارد و در فهرست بالا دیده نمی‌شود، از همین فرم می‌توانید برایش پیگیری بسازید.</div>
+        </div>
+      </div>
+      <?php endif; ?>
 
       <?php
       $hasAny = false;
@@ -1115,6 +1241,28 @@ if($route==='followups'){
                 </div>
                 <?php endif; ?>
                 <?php endif;?>
+                <?php if(Auth::can('followups.manage')): $rowCreateId = 'fu-new-' . (int)$r['id']; ?>
+                <button type="button" class="btn btn-sm btn-outline-success mt-1" data-bs-toggle="collapse" data-bs-target="#<?=e($rowCreateId)?>" aria-controls="<?=e($rowCreateId)?>" aria-expanded="false"><i class="bi bi-plus-lg"></i> پیگیری جدید</button>
+                <div class="collapse mt-2" id="<?=e($rowCreateId)?>">
+                  <form method="post" class="followup-create-form">
+                    <?=View::csrf()?>
+                    <input type="hidden" name="create_followup" value="1">
+                    <input type="hidden" name="customer_id" value="<?=(int)$r['customer_id']?>">
+                    <input type="hidden" name="filter" value="<?=e($filter)?>">
+                    <label class="form-label small" for="<?=e($rowCreateId)?>-due">تاریخ سررسید</label>
+                    <?=View::dateInput('due_date', followup_default_due_date(), true, $rowCreateId . '-due')?>
+                    <label class="form-label small mt-2" for="<?=e($rowCreateId)?>-priority">اولویت</label>
+                    <select name="priority" id="<?=e($rowCreateId)?>-priority" class="form-select form-select-sm mb-2">
+                      <option value="normal">عادی</option>
+                      <option value="high">بالا</option>
+                      <option value="low">پایین</option>
+                    </select>
+                    <label class="form-label small" for="<?=e($rowCreateId)?>-desc">شرح</label>
+                    <input name="description" id="<?=e($rowCreateId)?>-desc" class="form-control form-control-sm mb-2" placeholder="مثلاً: پیگیری بعدی همین مشتری">
+                    <button class="btn btn-sm btn-success"><i class="bi bi-plus-lg"></i> ثبت پیگیری برای این مشتری</button>
+                  </form>
+                </div>
+                <?php endif; ?>
               </td>
             </tr>
             <?php endforeach; if(!$rows): ?><tr><td colspan="7" class="empty py-4 text-center"><i class="bi bi-inbox fs-4 d-block mb-2"></i> موردی در این بخش وجود ندارد.</td></tr><?php endif;?>

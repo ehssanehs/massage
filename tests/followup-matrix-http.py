@@ -132,10 +132,12 @@ def main():
         for name in ('زهرا کاظمی', 'محمد رضایی', 'سمیرا شریفی'):
             check(name in body, f'{name} has a row')
 
-        # Columns: exactly the follow-up turns that exist, in order.
+        # Columns: exactly the follow-up turns that exist, plus one extra turn so
+        # every row (including the deepest chain) has an empty cell to create in.
         for turn in ('پیگیری ۱', 'پیگیری ۲', 'پیگیری ۳'):
             check(turn in body, f'column {turn} exists')
-        check('پیگیری ۴' not in body, 'no column beyond the deepest follow-up chain')
+        check('پیگیری ۴' in body, 'one turn beyond the deepest chain hosts the create button')
+        check('پیگیری ۵' not in body, 'but no further empty turns')
 
         # Cells: status, Jalali date and the FULL result text of each follow-up.
         for label in ('رزرو شد', 'تماس گرفته شد', 'رد کرد', 'در انتظار'):
@@ -207,6 +209,65 @@ def main():
         check(status == 302, 'the invalid recording is answered with a redirect, not an error page')
         check(sql(db, f"SELECT COUNT(*) FROM customer_timeline WHERE entity='followups' AND entity_id={pending} AND title='پیگیری انجام شد'") == '1',
               'a refused recording adds no completion event')
+
+        # --- manual creation from the follow-up centre --------------------------
+        # filter=all so the page lists rows whatever their status (this scratch
+        # database only holds the follow-ups this suite created).
+        status, centre, _ = server.req('followups', filter='all')
+        check(status == 200, 'the follow-up centre renders')
+        check('create_followup' in centre, 'the centre offers the manual-create form')
+        check('followup-create-form' in centre, 'and a per-row create form')
+
+        before_centre = int(sql(db, "SELECT COUNT(*) FROM followups WHERE customer_id=%s" % ids['C-MX-3']))
+        token = server.csrf(centre)
+        status, _, headers = server.req('followups', {
+            '_csrf': token, 'create_followup': '1', 'customer_id': ids['C-MX-3'],
+            'due_date': '۱۴۰۵/۰۳/۰۱', 'priority': 'high', 'description': 'پیگیری دستی از مرکز',
+        }, filter='all')
+        check(status == 302, 'creating from the centre redirects')
+        after_centre = int(sql(db, "SELECT COUNT(*) FROM followups WHERE customer_id=%s" % ids['C-MX-3']))
+        check(after_centre == before_centre + 1, 'exactly one follow-up is created')
+        new_id = sql(db, "SELECT id FROM followups WHERE customer_id=%s AND description='پیگیری دستی از مرکز'" % ids['C-MX-3'])
+        check(new_id != '', 'the new follow-up exists')
+        check(sql(db, f"SELECT status,priority FROM followups WHERE id={new_id}") == 'pending\thigh',
+              'a manual follow-up starts pending with the chosen priority')
+        expected_due = run([PHP, '-r', "require 'app/bootstrap.php'; echo App\\Support\\Jalali::toGregorian('1405/03/01');"], env=env).stdout.strip()
+        check(sql(db, f'SELECT due_date FROM followups WHERE id={new_id}') == expected_due,
+              'the Jalali due date is stored as the matching Gregorian date')
+        check(sql(db, f"SELECT COUNT(*) FROM customer_timeline WHERE entity='followups' AND entity_id={new_id} AND title='پیگیری دستی ثبت شد'") == '1',
+              'scheduling it is recorded in the customer timeline')
+        check(sql(db, f"SELECT COUNT(*) FROM audit_logs WHERE action='followups.create' AND entity_id={new_id}") == '1',
+              'creating it is audited')
+
+        # An unusable date must not create a row.
+        token = server.csrf(centre)
+        status, _, _ = server.req('followups', {
+            '_csrf': token, 'create_followup': '1', 'customer_id': ids['C-MX-3'],
+            'due_date': '۱۴۰۵/۱۳/۴۰', 'description': 'تاریخ خراب',
+        }, filter='all')
+        check(status == 302, 'an invalid date is answered with a redirect')
+        check(sql(db, "SELECT COUNT(*) FROM followups WHERE description='تاریخ خراب'") == '0',
+              'nothing is created for an invalid date')
+
+        # --- manual creation from a matrix cell ---------------------------------
+        status, matrix_page, _ = server.req('followups.matrix', q='شریفی')
+        check('matrix_action" value="create"' in matrix_page, 'the matrix offers a create cell')
+        check('ایجاد پیگیری' in matrix_page, 'the cell is labelled for the user')
+        token = server.csrf(matrix_page)
+        status, _, _ = server.req('followups.matrix', {
+            '_csrf': token, 'matrix_action': 'create', 'customer_id': ids['C-MX-3'],
+            'due_date': '۱۴۰۵/۰۴/۱۵', 'priority': 'low', 'description': 'پیگیری دستی از ماتریس',
+        }, q='شریفی')
+        check(status == 302, 'creating from a matrix cell redirects')
+        matrix_id = sql(db, "SELECT id FROM followups WHERE customer_id=%s AND description='پیگیری دستی از ماتریس'" % ids['C-MX-3'])
+        check(matrix_id != '', 'the matrix creates a follow-up for that customer')
+        check(sql(db, f"SELECT priority FROM followups WHERE id={matrix_id}") == 'low', 'with its own priority')
+        status, matrix_after, _ = server.req('followups.matrix', q='شریفی')
+        # A matrix cell shows status, due date and result — descriptions are not
+        # rendered there, so the new rows are found by their due dates.
+        check('۱۴۰۵/۰۴/۱۵' in matrix_after, 'the follow-up created from the matrix shows in the row')
+        check('۱۴۰۵/۰۳/۰۱' in matrix_after, 'alongside the one created from the centre')
+        check(matrix_after.count('در انتظار') >= 2, 'both new follow-ups render as pending')
 
         print(f'OK: {assertions} follow-up matrix HTTP/MySQL assertions ({db})')
     finally:
