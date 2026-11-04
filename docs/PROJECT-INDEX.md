@@ -85,9 +85,16 @@ branches, roles, users, settings, customers, services, therapists, appointments,
 - `?r=lookup&type=customer|therapist|service&q=...` یک JSON کوچک (`id`,`label`) برمی‌گرداند؛ زیر ۲ کاراکتر خالی است، نوع ناشناخته ۴۰۰، و مجوز همان ماژول (`customers.view`/`therapists.view`/`services.view`) لازم است. `%` و `_` در کوئری escape می‌شوند.
 - در `public/assets/js/app.js` هر `select.select-rel` با بیش از ۸ گزینه یک کادر جستجو بالای خود می‌گیرد. فیلتر سمت مرورگر روی همان گزینه‌هاست؛ اگر نتیجه‌ای نبود، از endpoint بالا می‌پرسد و گزینه‌های تازه را به همان `select` اضافه می‌کند. خود `select` سر جایش می‌ماند، پس فرم، `required` و حالت بدون JavaScript دست‌نخورده می‌مانند.
 
+## تصاویر کاتالوگ
+
+- ستون `massage_types.image` مسیر تصویر را نگه می‌دارد؛ مسیرهای `uploads/site/...` آپلود مدیر هستند و `assets/img/massage/photos/...` عکس‌های همراه پروژه. اگر خالی باشد، تصویرسازی SVG همان اسلاگ استفاده می‌شود.
+- `App\Support\ImageUpload` تنها جایی است که آپلود می‌پذیرد: بررسی `getimagesize` (فقط JPEG/PNG/WebP)، سقف ۴ مگابایت، نام تصادفی، ذخیره در `public/uploads/site/`. `public/uploads/.htaccess` اجرای هر فایل اسکریپتی را در آن پوشه می‌بندد.
+- ماژول `site_types` با `image => true` فرمش `multipart/form-data` می‌شود و بلوک آپلود در `module_form` رندر می‌شود؛ `apply_upload()` فقط قبل از insert/update صدا زده می‌شود.
+- `Url::asset()` و `Url::upload()` زمان تغییر فایل را به آدرس اضافه می‌کنند (`?v=`) تا آپدیت CSS/JS در کش مرورگر گیر نکند.
+
 ## دستورهای کنسول
 
-`install` (نصب تازه)، `migrate` (ساختار، برای همهٔ بخش‌ها + SITE_DATABASE)، `seed` (نصب تازه: نقش/مدیر/تنظیمات + محتوای سایت)، `site:seed` (فقط محتوای سایت، ایمن برای اجرا روی نصب فعال)، `demo:seed`، `user:password`، `schedule:run`، `backup:create`، `backup:check`.
+`install` (نصب تازه)، `migrate` (ساختار، برای همهٔ بخش‌ها + SITE_DATABASE)، `seed` (نصب تازه: نقش/مدیر/تنظیمات + محتوای سایت)، `site:seed` (فقط محتوای سایت، ایمن برای اجرا روی نصب فعال)، `site:check` (دیتابیس محتوا و تعداد رکوردها/عکس‌ها)، `demo:seed`، `user:password`، `schedule:run`، `backup:create`، `backup:check`.
 
 ## بکاپ
 

@@ -46,7 +46,7 @@ test('each section owns its own database and prefixes its own URLs', () => {
   for (const section of ['men', 'women']) {
     const page = route({r:'customers'}, undefined, {uid:1, tenant:section, _csrf:'t'}, BOTH).body;
     assert.match(page, new RegExp(`"/${section}/index\\.php\\?r=customers\\.create"`), `${section} keeps its own prefix`);
-    assert.match(page, /"\/assets\/css\/app\.css"/, 'shared assets stay absolute');
+    assert.match(page, /"\/assets\/css\/app\.css(?:\?v=\d+)?"/, 'shared assets stay absolute');
   }
 });
 
@@ -86,11 +86,11 @@ test('links keep the mount point when the app is served from a subdirectory', ()
   assert.match(home.body, /href="\/massage\/public\/index\.php\?r=login"/);
   assert.match(home.body, /href="\/massage\/public\/index\.php\?r=massage-types"/);
   assert.match(home.body, /href="\/massage\/public\/men\/index\.php\?r=login"/, 'the section entry point keeps the subdirectory');
-  assert.match(home.body, /"\/massage\/public\/assets\/css\/public\.css"/);
+  assert.match(home.body, /"\/massage\/public\/assets\/css\/public\.css(?:\?v=\d+)?"/);
   assert.doesNotMatch(home.body, /href="\/index\.php/, 'nothing points at the document root');
 
   const crm = route({r:'customers'}, undefined, {uid:1, tenant:'men', _csrf:'t'}, BOTH, '/massage/public/men/index.php');
   assert.match(crm.body, /"\/massage\/public\/men\/index\.php\?r=customers\.create"/, 'a section page is not double-prefixed');
-  assert.match(crm.body, /"\/massage\/public\/assets\/css\/app\.css"/);
+  assert.match(crm.body, /"\/massage\/public\/assets\/css\/app\.css(?:\?v=\d+)?"/);
   assert.doesNotMatch(crm.body, /\/men\/men\//, 'the section segment is never duplicated');
 });

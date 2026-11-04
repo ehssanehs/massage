@@ -48,9 +48,26 @@ final class Url {
         return self::base() . '/' . $tenant . '/index.php?r=login';
     }
 
-    /** Absolute URL for a file under public/assets. */
+    /**
+     * Absolute URL for a file under public/assets.
+     *
+     * The mtime is appended so an updated stylesheet or script is never served
+     * from a browser (or proxy) cache under the old content. That mismatch is
+     * what makes a freshly deployed site look "broken" until a hard refresh.
+     */
     public static function asset(string $path): string {
-        return self::base() . '/assets/' . ltrim($path, '/');
+        $clean = ltrim($path, '/');
+        $file = base_path('public/assets/' . $clean);
+        $version = is_file($file) ? '?v=' . filemtime($file) : '';
+        return self::base() . '/assets/' . $clean . $version;
+    }
+
+    /** Absolute URL for a user-uploaded file under public/ (e.g. uploads/site/x.jpg). */
+    public static function upload(string $path): string {
+        $clean = ltrim($path, '/');
+        $file = base_path('public/' . $clean);
+        $version = is_file($file) ? '?v=' . filemtime($file) : '';
+        return self::base() . '/' . $clean . $version;
     }
 
     /** Forget the cached base (tests that simulate another mount point). */

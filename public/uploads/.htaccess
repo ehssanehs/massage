@@ -1,0 +1,6 @@
+# Uploaded files are user content: never execute them as code.
+<FilesMatch "\.(php|phtml|phar|php3|php4|php5|php7|php8|pl|py|cgi|sh)$">
+  Require all denied
+</FilesMatch>
+Options -ExecCGI -Indexes
+AddType text/plain .php .phtml .phar

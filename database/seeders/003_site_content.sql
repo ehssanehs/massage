@@ -66,3 +66,10 @@ INSERT IGNORE INTO massage_types (slug, title, summary, body, illustration, dura
  'جلسه با خیساندن پا در آب گرم و نمک انجام می‌شود، سپس اسکراب و ماساژ پا و در پایان کرم مرطوب‌کننده. برای پوست خشک و ترک‌خورده پا و رفع بوی پا کاربرد دارد. در صورت زخم باز یا قارچ فعال پوستی انجام نمی‌شود.', 'foot-detox', 45, NULL, 140, 'active'),
 ('spiritual', 'پاکسازی روح', 'آرام‌سازی ذهن با رایحه و تنفس',
  'این جلسه ترکیبی از ماساژ آرام، رایحه‌درمانی و چند دقیقه تنفس آگاهانه است؛ هدفش کاهش اضطراب و برگشتن به ریتم آرام بدن است. هیچ ادعای درمانی پزشکی ندارد و جایگزین درمان اختلالات روانی نیست. برای کسانی که بعد از یک دوره پرتنش به توقف نیاز دارند مناسب است.', 'spiritual', 60, NULL, 150, 'active');
+
+
+-- عکس واقعی هر نوع ماساژ. فقط جاهایی را پر می‌کند که هنوز تصویری انتخاب نشده
+-- است، پس تصویری که مدیر از پنل آپلود می‌کند هرگز بازنویسی نمی‌شود.
+UPDATE massage_types
+   SET image = CONCAT('assets/img/massage/photos/', slug, '.jpg')
+ WHERE image IS NULL AND slug IN ('relax', 'therapeutic', 'hot-stone', 'swedish', 'thai', 'head-face', 'thai-yoga', 'yumeiho', 'reflexology', 'foot', 'hot-towel', 'slimming', 'facial', 'foot-detox', 'spiritual');
