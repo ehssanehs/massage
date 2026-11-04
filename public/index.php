@@ -920,9 +920,25 @@ if (in_array($route, ['home', 'massage-types', 'massage-type', 'education', 'boo
     if ($route === 'booking-status') {
         // Public: the reference is the only credential, and it is looked up
         // across every centre so the guest does not have to remember which.
-        $reference = trim((string)($_GET['ref'] ?? ''));
+        $reference = trim((string)($_GET['ref'] ?? $_POST['ref'] ?? ''));
         $found = $reference !== '' ? \App\Services\Booking::findAnywhere($reference) : null;
-        echo \App\Support\PublicSite::bookingStatus($reference, $found, $reference !== '');
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cancel') {
+            if ($found === null) {
+                echo \App\Support\PublicSite::bookingStatus($reference, null, true, false, 'نوبتی با این کد پیدا نشد.');
+                exit;
+            }
+            $cancelled = \App\Services\Booking::cancel($found['section'] ?? null, $reference);
+            if ($cancelled['ok']) {
+                // Post/Redirect/Get so a refresh does not try to cancel again.
+                header('Location: ' . \App\Support\Url::plain('booking-status', ['ref' => \App\Services\Booking::normalizeRef($reference), 'cancelled' => '1']));
+                exit;
+            }
+            echo \App\Support\PublicSite::bookingStatus($reference, $found, true, false, (string)($cancelled['error'] ?? ''));
+            exit;
+        }
+
+        echo \App\Support\PublicSite::bookingStatus($reference, $found, $reference !== '', isset($_GET['cancelled']));
         exit;
     }
     if ($route === 'booking') {

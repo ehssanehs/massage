@@ -43,6 +43,24 @@ def sql(db, statement):
     return result.stdout.strip()
 
 
+class Client:
+    """One guest session: GET then POST with the same cookies and CSRF token."""
+
+    def __init__(self, port):
+        self.port = port
+        self.opener = build_opener(HTTPCookieProcessor(), NoRedirect())
+
+    def request(self, path, data=None):
+        url = f'http://127.0.0.1:{self.port}{path}'
+        body = urlencode(data).encode() if data is not None else None
+        req = Request(url, data=body, method='POST' if data is not None else 'GET')
+        try:
+            with self.opener.open(req, timeout=30) as response:
+                return response.status, response.read().decode(), dict(response.headers)
+        except HTTPError as error:
+            return error.code, error.read().decode(), dict(error.headers)
+
+
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         return None
@@ -130,7 +148,8 @@ def main():
     sql(db, """INSERT INTO services (name, default_price, duration_minutes, status)
                VALUES ('ماساژ تست ۶۰', 1000000, 60, 'active'),
                       ('ماساژ تست ۹۰', 1500000, 90, 'active'),
-                      ('ماساژ غیرفعال', 900000, 60, 'inactive')""")
+                      ('ماساژ غیرفعال', 900000, 60, 'inactive'),
+                      ('ماساژ بدون درمانگر', 800000, 60, 'active')""")
     service_id = int(sql(db, "SELECT id FROM services WHERE name='ماساژ تست ۶۰'"))
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
 
@@ -220,6 +239,59 @@ def main():
         check('خالی نیست' in third, 'a fully booked slot is rejected on submit')
         check(sql(db, "SELECT COUNT(*) FROM appointments WHERE source='online'") == '2',
               'a rejected submission writes nothing')
+
+        # --- a day list that follows the chosen treatment --------------------
+        nobody = sql(db, "SELECT id FROM services WHERE name='ماساژ بدون درمانگر'")
+        status, page, _ = server.guest(f'/index.php?r=booking&section=men&service={nobody}')
+        check(status == 200 and 'زمان خالی نیست' in page,
+              'a treatment no therapist performs offers no days at all')
+
+        status, page, _ = server.guest(f'/index.php?r=booking&section=men&service={service_id}')
+        check('زمان خالی' in page and 'name="date"' in page, 'a bookable treatment lists days with free times')
+        check(page.count('زمان خالی') >= 2, 'each day is labelled with how many times are free')
+
+        # --- case-insensitive tracking and guest cancellation ----------------
+        # A dedicated booking so the earlier one stays pending for the staff test.
+        guest = Client(server.port)
+        _, book_page, _ = guest.request(f'/index.php?r=booking&section=men&service={service_id}&date={tomorrow}')
+        book_token = re.search(r'name="_csrf" value="([^"]+)"', book_page)
+        guest.request('/index.php?r=booking', {
+            '_csrf': book_token.group(1), 'section': 'men', 'service_id': service_id,
+            'date': tomorrow, 'time': '15:00:00', 'name': 'مهمان لغو', 'mobile': '09125555555',
+        })
+        cancel_ref = sql(db, "SELECT booking_ref FROM appointments WHERE status='pending' ORDER BY id DESC LIMIT 1")
+        check(cancel_ref != '', 'the guest booking was created')
+
+        status, tracked, _ = guest.request(f'/index.php?r=booking-status&ref={cancel_ref.lower()}')
+        check(status == 200 and 'در انتظار تأیید' in tracked, 'the reference is not case sensitive')
+        check('لغو این نوبت' in tracked, 'a pending booking offers the cancel control')
+
+        token2 = re.search(r'name="_csrf" value="([^"]+)"', tracked)
+        check(token2 is not None, 'the cancel form carries a CSRF token')
+        status, _, headers = guest.request('/index.php?r=booking-status', {
+            '_csrf': token2.group(1), 'ref': cancel_ref.lower(), 'action': 'cancel',
+        })
+        check(status == 302, 'cancelling redirects back to the status page')
+        check(sql(db, f"SELECT status FROM appointments WHERE booking_ref='{cancel_ref}'") == 'cancelled',
+              'the booking is cancelled in the database')
+
+        status, after, _ = guest.request(f'/index.php?r=booking-status&ref={cancel_ref}&cancelled=1')
+        check('نوبت لغو شد' in after, 'the guest is told the booking was cancelled')
+        check('لغو این نوبت' not in after, 'a cancelled booking offers no cancel control')
+
+        # A second cancel of the same code is refused, using a live session.
+        _, pending_page, _ = guest.request(f'/index.php?r=booking-status&ref={reference}')
+        token3 = re.search(r'name="_csrf" value="([^"]+)"', pending_page)
+        status, refused, _ = guest.request('/index.php?r=booking-status', {
+            '_csrf': token3.group(1), 'ref': cancel_ref, 'action': 'cancel',
+        })
+        check('دیگر در وضعیت' in refused, 'cancelling an already-cancelled booking is refused with a message')
+        check(sql(db, f"SELECT status FROM appointments WHERE booking_ref='{cancel_ref}'") == 'cancelled',
+              'the refused cancel did not change anything')
+
+        # the cancelled slot is free again
+        status, page, _ = server.guest(f'/index.php?r=booking&section=men&service={service_id}&date={tomorrow}')
+        check('name="time"' in page, 'a cancelled booking frees its time again')
 
         bad_mobile = server.post('/index.php?r=booking', {
             '_csrf': csrf, 'section': 'men', 'service_id': service_id, 'date': tomorrow,

@@ -334,10 +334,13 @@ final class PublicSite {
         }
 
         $services = Booking::services($section);
-        $days = Booking::days($section, 10);
         $serviceId = (int)($query['service'] ?? 0);
         $date = (string)($query['date'] ?? '');
-        $slots = ($serviceId > 0 && isset($days[$date])) ? Booking::slots($section, $serviceId, $date) : [];
+        $openDays = Booking::days($section, 7);
+        // Only days that actually have a free time for the chosen treatment, so
+        // a guest cannot pick a day that turns out to be empty.
+        $availableDays = $serviceId > 0 ? Booking::availableDays($section, $serviceId, 12) : [];
+        $slots = ($serviceId > 0 && isset($availableDays[$date])) ? Booking::slots($section, $serviceId, $date) : [];
 
         $serviceOptions = '';
         foreach ($services as $service) {
@@ -347,20 +350,35 @@ final class PublicSite {
                 . ((float)$service['default_price'] > 0 ? ' (' . self::num(number_format((float)$service['default_price'])) . ' تومان)' : '')
                 . '</option>';
         }
-        $dayOptions = '';
-        foreach ($days as $value => $label) {
-            $selected = $value === $date ? ' selected' : '';
-            $dayOptions .= '<option value="' . e($value) . '"' . $selected . '>' . e($label) . '</option>';
-        }
 
         $sectionField = $section !== null ? '<input type="hidden" name="section" value="' . e($section) . '">' : '';
         $pickForm = '<form class="booking-pick" method="get" action="' . e(self::url('booking')) . '">'
             . '<input type="hidden" name="r" value="booking">' . $sectionField
             . '<div class="field"><label for="bk-service">خدمت</label>'
             . '<select id="bk-service" name="service" required>' . ($serviceId === 0 ? '<option value="">انتخاب کنید</option>' : '') . $serviceOptions . '</select></div>'
-            . '<div class="field"><label for="bk-date">روز</label>'
-            . '<select id="bk-date" name="date" required>' . ($date === '' ? '<option value="">انتخاب کنید</option>' : '') . $dayOptions . '</select></div>'
-            . '<button class="btn-quiet" type="submit">نمایش زمان‌های خالی</button></form>';
+            . '<button class="btn-quiet" type="submit">' . ($serviceId === 0 ? 'نمایش روزهای خالی' : 'تغییر خدمت') . '</button></form>';
+
+        $dayForm = '';
+        if ($serviceId > 0) {
+            if ($availableDays === []) {
+                $dayForm = '<p class="state-note">برای این خدمت در روزهای آینده زمان خالی نیست. خدمت دیگری را انتخاب کنید یا تلفنی هماهنگ کنید.</p>';
+            } else {
+                $dayOptions = '';
+                foreach ($availableDays as $value => $info) {
+                    $selected = $value === $date ? ' selected' : '';
+                    $dayOptions .= '<option value="' . e($value) . '"' . $selected . '>' . e($info['label'])
+                        . ' — ' . self::num($info['slots']) . ' زمان خالی</option>';
+                }
+                $dayForm = '<form class="booking-pick" method="get" action="' . e(self::url('booking')) . '">'
+                    . '<input type="hidden" name="r" value="booking">' . $sectionField
+                    . '<input type="hidden" name="service" value="' . $serviceId . '">'
+                    . '<div class="field"><label for="bk-date">روز (فقط روزهای دارای زمان خالی)</label>'
+                    . '<select id="bk-date" name="date" required>'
+                    . (!isset($availableDays[$date]) ? '<option value="">انتخاب کنید</option>' : '') . $dayOptions
+                    . '</select></div>'
+                    . '<button class="btn-quiet" type="submit">نمایش ساعت‌های خالی</button></form>';
+            }
+        }
 
         $notice = '';
         if ($result !== null && $result['ok']) {
@@ -368,6 +386,7 @@ final class PublicSite {
             $notice = '<div class="booking-done" role="status"><h2>نوبت شما ثبت شد</h2>'
                 . '<p>' . e($appointment['service']) . ' — ' . e(Booking::dayLabel($appointment['date'])) . ' ساعت ' . self::num($appointment['time']) . '</p>'
                 . '<p class="booking-ref">کد پیگیری: <strong dir="ltr">' . e((string)$result['ref']) . '</strong></p>'
+                . '<div class="code-warning" role="alert"><strong>این کد را حتماً یادداشت کنید.</strong> برای دیدن وضعیت و لغو نوبت، تنها راه شما همین کد پیگیری است.</div>'
                 . '<p class="center-card-note">نوبت پس از تأیید مرکز قطعی می‌شود. وضعیت را با همین کد می‌توانید ببینید.</p>'
                 . '<p><a class="link-strong" href="' . e(self::url('booking-status', ['ref' => (string)$result['ref']])) . '">مشاهدهٔ وضعیت نوبت</a></p></div>';
         } elseif ($result !== null && $result['errors'] !== []) {
@@ -379,7 +398,7 @@ final class PublicSite {
         $slotBlock = '';
         if ($services === []) {
             $slotBlock = '<p class="state-note">هنوز خدمتی برای رزرو آنلاین ثبت نشده است. لطفاً تلفنی هماهنگ کنید.</p>';
-        } elseif ($days === []) {
+        } elseif ($openDays === []) {
             $slotBlock = '<p class="state-note">برنامهٔ کاری مرکز هنوز ثبت نشده است؛ فعلاً رزرو آنلاین ممکن نیست. لطفاً تلفنی هماهنگ کنید.</p>';
         } elseif ($serviceId > 0 && $date !== '') {
             if ($slots === []) {
@@ -420,7 +439,7 @@ final class PublicSite {
             . ($section !== null ? '<p class="page-head-note">' . e(Booking::sectionLabel($section)) . '</p>' : '')
             . '<p class="page-head-note">قبلاً نوبت گرفته‌اید؟ <a class="link-strong" href="' . e(self::url('booking-status')) . '">وضعیت نوبت را با کد پیگیری ببینید</a></p>'
             . '</section>'
-            . $notice . $status . $pickForm . $slotBlock;
+            . $notice . $status . $pickForm . $dayForm . $slotBlock;
         return self::layout('رزرو نوبت', $body, 'booking', SiteContent::block('booking.lead'));
     }
 
@@ -428,7 +447,7 @@ final class PublicSite {
      * Track a booking by its reference. The guest only knows the code, so the
      * lookup checks every centre rather than asking them to remember which one.
      */
-    public static function bookingStatus(string $reference, ?array $found = null, bool $looked = false): string {
+    public static function bookingStatus(string $reference, ?array $found = null, bool $looked = false, bool $cancelled = false, string $cancelError = ''): string {
         $field = '<form class="booking-form booking-track" method="get" action="' . e(self::url('booking-status')) . '">'
             . '<input type="hidden" name="r" value="booking-status">'
             . '<div class="field"><label for="track-ref">کد پیگیری نوبت</label>'
@@ -438,7 +457,13 @@ final class PublicSite {
             . '<p class="form-note">این کد را پس از ثبت نوبت دریافت کرده‌اید.</p></form>';
 
         $result = '';
-        if ($looked) {
+        if ($cancelled) {
+            $result = '<div class="booking-done" role="status"><h2>نوبت لغو شد</h2>'
+                . '<p>این نوبت از فهرست مرکز حذف شد. اگر زمان دیگری می‌خواهید، نوبت تازه بگیرید.</p>'
+                . '<p><a class="link-strong" href="' . e(self::url('booking')) . '">رزرو نوبت جدید</a></p></div>';
+        } elseif ($cancelError !== '') {
+            $result = '<div class="booking-error" role="alert"><ul><li>' . e($cancelError) . '</li></ul></div>';
+        } elseif ($looked) {
             if ($found === null) {
                 $result = '<div class="booking-error" role="alert"><ul><li>نوبتی با این کد پیدا نشد. کد را بررسی کنید یا با مرکز تماس بگیرید.</li></ul></div>';
             } else {
@@ -448,7 +473,17 @@ final class PublicSite {
                     . '<p>' . e((string)$found['service']) . ' — ' . e($when) . '</p>'
                     . '<p>وضعیت: <strong>' . e(self::statusLabel((string)$found['status'])) . '</strong></p>'
                     . (!empty($found['section']) ? '<p class="center-card-note">' . e(Booking::sectionLabel((string)$found['section'])) . '</p>' : '')
-                    . '<p class="center-card-note">برای تغییر یا لغو نوبت، با مرکز تماس بگیرید.</p></div>';
+                    . ($found['status'] === 'pending'
+                        ? '<details class="cancel-box"><summary>لغو این نوبت</summary>'
+                          . '<p class="form-note">لغو فقط تا قبل از تأیید مرکز ممکن است و قابل بازگشت نیست.</p>'
+                          . '<form method="post" action="' . e(self::url('booking-status', ['ref' => (string)$found['booking_ref']])) . '">'
+                          . View::csrf()
+                          . '<input type="hidden" name="ref" value="' . e((string)$found['booking_ref']) . '">'
+                          . '<input type="hidden" name="action" value="cancel">'
+                          . '<button class="btn-quiet" type="submit">بله، این نوبت را لغو کن</button>'
+                          . '</form></details>'
+                        : '<p class="center-card-note">این نوبت تأیید شده است؛ برای تغییر یا لغو، با مرکز تماس بگیرید.</p>')
+                    . '</div>';
             }
         }
 
