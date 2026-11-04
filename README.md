@@ -754,6 +754,27 @@ sudo -u www-data git pull origin main
 محلی را کنار بگذارید (`git stash`) یا اگر لازم نیستند `git checkout -- .` بزنید؛
 فایل `.env` تحت git نیست و دست نمی‌خورد.
 
+اگر `git pull` این خطا را داد:
+
+```
+fatal: detected dubious ownership in repository at '/var/www/massage'
+```
+
+یعنی مالک پوشه با کاربری که git را اجرا می‌کند یکی نیست. `git config --global`
+فقط برای همان کاربری است که آن را اجرا می‌کند؛ اگر با کاربر خودتان اجرا کنید و
+git را با `www-data` صدا بزنید، هنوز خطا می‌دهد. یکی از این دو کار درست است:
+
+```bash
+# راه اول: استثنا را برای همان کاربری ثبت کنید که git را اجرا می‌کند
+sudo -u www-data git config --global --add safe.directory /var/www/massage
+
+# راه دوم (توصیه‌شده): مالکیت پروژه را به کاربر وب‌سرور بدهید
+sudo chown -R www-data:www-data /var/www/massage
+sudo chmod -R 775 /var/www/massage/storage /var/www/massage/public/uploads
+```
+
+بررسی: `sudo -u www-data git config --global --get-all safe.directory`
+
 **۳) ساختار دیتابیس را به‌روز کنید** (برای هر دو بخش):
 
 ```bash
