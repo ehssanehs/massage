@@ -416,3 +416,8 @@ html[data-bs-theme="dark"] .customer-birth-filter{background:rgba(124,58,237,.06
     .card,.stat{box-shadow:none;border:1px solid #ddd}
     .content{padding:0}
 }
+
+/* Searchable relational selects (customer / therapist / service) */
+.rel-search { margin-bottom: .35rem; }
+.rel-search-status { font-size: .75rem; margin: 0 0 .4rem; min-height: 1rem; color: var(--bs-secondary-color, #6c757d); }
+select.select-rel option[hidden] { display: none; }

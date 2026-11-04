@@ -80,6 +80,16 @@ branches, roles, users, settings, customers, services, therapists, appointments,
 - مسیرها: `gift` (عمومی، POST → redirect به درگاه) و `payment.callback` (بدون ورود، با authority) و `gifts` (پنل، `packages.view`/`packages.manage`).
 - جدول `gift_cards` در پایگاه‌دادهٔ محتوای سایت است؛ `bin/console migrate|seed` وقتی `SITE_DATABASE` تنظیم باشد آن را هم پوشش می‌دهد.
 
+## جستجو در فهرست‌های انتخابی
+
+- `?r=lookup&type=customer|therapist|service&q=...` یک JSON کوچک (`id`,`label`) برمی‌گرداند؛ زیر ۲ کاراکتر خالی است، نوع ناشناخته ۴۰۰، و مجوز همان ماژول (`customers.view`/`therapists.view`/`services.view`) لازم است. `%` و `_` در کوئری escape می‌شوند.
+- در `public/assets/js/app.js` هر `select.select-rel` با بیش از ۸ گزینه یک کادر جستجو بالای خود می‌گیرد. فیلتر سمت مرورگر روی همان گزینه‌هاست؛ اگر نتیجه‌ای نبود، از endpoint بالا می‌پرسد و گزینه‌های تازه را به همان `select` اضافه می‌کند. خود `select` سر جایش می‌ماند، پس فرم، `required` و حالت بدون JavaScript دست‌نخورده می‌مانند.
+
+## بکاپ
+
+- `BackupService::create()` اول `mysqldump` را با فلگ‌های سازگار با کاربر محدود اجرا می‌کند؛ اگر شکست بخورد یا کلاینت موجود نباشد، با PDO (`SHOW CREATE TABLE` + INSERTهای ۵۰۰تایی) دامپ می‌کند. `BackupService::lastMethod()` می‌گوید کدام روش موفق شد.
+- پیام خطا هر دو علت را با هم نشان می‌دهد؛ دیگر «mysqldump با خطا پایان یافت» بدون جزئیات وجود ندارد.
+
 ## قراردادهای مهم (برای توسعه آینده)
 - هر فرم POST با CSRF (`View::csrf` / `Security::verifyCsrf`).
 - خروجی‌ها با `e()`؛ تاریخ ورودی کاربر جلالی است، ذخیره میلادی (`Jalali::toGregorian` در normalize_post).
