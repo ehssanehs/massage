@@ -34,6 +34,32 @@ function target_tenants(): array {
     return [$requested];
 }
 
+/**
+ * The public site owns its own database (SITE_DATABASE) when it is configured,
+ * so its migrations and content seeders must run there too — not only in the
+ * section CRMs. Unset SITE_DATABASE means "same database", nothing extra runs.
+ */
+function site_pdo(): ?PDO {
+    $name = trim((string)env_value('SITE_DATABASE', ''));
+    if ($name === '') return null;
+    $dsn = 'mysql:host=' . env_value('DB_HOST', '127.0.0.1') . ';port=' . env_value('DB_PORT', '3306')
+        . ';dbname=' . $name . ';charset=utf8mb4';
+    return new PDO($dsn, env_value('DB_USERNAME', 'root'), env_value('DB_PASSWORD', ''),
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+}
+function run_site_migrations(): void {
+    $pdo = site_pdo();
+    if ($pdo === null) return;
+    $files = glob(base_path('database/migrations/*.sql')) ?: [];
+    sort($files);
+    foreach ($files as $file) $pdo->exec(file_get_contents($file));
+}
+function seed_site(): void {
+    $pdo = site_pdo();
+    if ($pdo === null) return;
+    $pdo->exec(file_get_contents(base_path('database/seeders/003_site_content.sql')));
+}
+
 function run_migrations(): void {
     $files = glob(base_path('database/migrations/*.sql')) ?: [];
     sort($files);
@@ -66,10 +92,13 @@ function each_tenant(callable $fn): void {
 try {
     if ($cmd === 'migrate') {
         each_tenant(function (): void { run_migrations(); echo "  Migrations completed.\n"; });
+        run_site_migrations();
     } elseif ($cmd === 'seed') {
         each_tenant(function (): void { seed(); echo "  Seeders completed.\n"; });
+        seed_site();
     } elseif ($cmd === 'install') {
         each_tenant(function (): void { run_migrations(); seed(); echo "  Installed (no demo data). Default admin: admin@example.com / password\n"; });
+        run_site_migrations(); seed_site();
     } elseif ($cmd === 'demo:seed') {
         each_tenant(function (): void { seed_demo(); echo "  Sample data loaded (demo services, therapists, customers, ...).\n"; });
     } elseif ($cmd === 'user:password') {

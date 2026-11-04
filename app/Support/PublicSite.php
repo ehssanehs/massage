@@ -3,6 +3,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Services\Booking;
+use App\Services\GiftCard;
 
 /**
  * The public (unauthenticated) site: landing page, the massage catalog and the
@@ -54,6 +55,7 @@ final class PublicSite {
             'home' => 'خانه',
             'massage-types' => 'انواع ماساژ',
             'booking' => 'رزرو نوبت',
+            'gift' => 'کارت هدیه',
             'education' => 'آموزش',
         ];
     }
@@ -410,6 +412,62 @@ final class PublicSite {
             'pending' => 'در انتظار تأیید', 'confirmed' => 'تأیید شده', 'arrived' => 'حاضر شده',
             'in_progress' => 'در حال انجام', 'completed' => 'انجام شده', 'cancelled' => 'لغو شده', 'no_show' => 'عدم مراجعه',
         ][$status] ?? $status;
+    }
+
+    /** The gift-card page: presets from the panel, no form until the gateway is wired. */
+    public static function gift(?array $result = null): string {
+        $enabled = GiftCard::enabled();
+        $notice = '';
+        if ($result !== null && ($result['errors'] ?? []) !== []) {
+            $items = '';
+            foreach ($result['errors'] as $error) $items .= '<li>' . e($error) . '</li>';
+            $notice = '<div class="booking-error" role="alert"><ul>' . $items . '</ul></div>';
+        }
+
+        $form = '';
+        if ($enabled) {
+            $presets = '';
+            foreach (GiftCard::presets() as $index => $amount) {
+                $presets .= '<label class="slot"><input type="radio" name="amount" value="' . $amount . '"' . ($index === 1 ? ' checked' : '') . ' required>'
+                    . '<span>' . self::num(number_format($amount)) . ' ریال</span></label>';
+            }
+            $form = '<form class="booking-form gift-form" method="post" action="' . e(self::url('gift')) . '">'
+                . View::csrf()
+                . '<fieldset class="slots"><legend>مبلغ کارت هدیه</legend>' . $presets . '</fieldset>'
+                . '<div class="field"><label for="g-name">نام خریدار</label><input id="g-name" name="buyer_name" required minlength="3" autocomplete="name"></div>'
+                . '<div class="field"><label for="g-mobile">موبایل خریدار</label><input id="g-mobile" name="buyer_mobile" required inputmode="numeric" pattern="09[0-9]{9}" dir="ltr" placeholder="09xxxxxxxxx" autocomplete="tel"></div>'
+                . '<div class="field"><label for="g-recipient">نام گیرنده (اختیاری)</label><input id="g-recipient" name="recipient_name"></div>'
+                . '<div class="field"><label for="g-recipient-mobile">موبایل گیرنده (اختیاری)</label><input id="g-recipient-mobile" name="recipient_mobile" inputmode="numeric" pattern="09[0-9]{9}" dir="ltr" placeholder="09xxxxxxxxx"></div>'
+                . '<div class="field"><label for="g-message">پیام روی کارت (اختیاری)</label><textarea id="g-message" name="message" rows="2" maxlength="200"></textarea></div>'
+                . '<button class="btn-solid" type="submit">پرداخت و دریافت کارت</button>'
+                . '<p class="form-note">پس از پرداخت موفق، کد کارت هدیه نمایش داده می‌شود و اعتبار آن یک سال است.</p>'
+                . '</form>';
+        } else {
+            $form = '<p class="state-note">فروش آنلاین کارت هدیه هنوز فعال نشده است. برای خرید، با مرکز تماس بگیرید.</p>';
+        }
+
+        $body = '<section class="page-head"><h1>' . e(SiteContent::block('gift.title', 'کارت هدیه ماساژ')) . '</h1>'
+            . '<p>' . e(SiteContent::block('gift.lead')) . '</p></section>' . $notice . $form;
+        return self::layout('کارت هدیه', $body, 'gift', SiteContent::block('gift.lead'));
+    }
+
+    /** What the buyer sees after the gateway sends them back. */
+    public static function paymentResult(bool $ok, ?array $card = null, string $error = '', string $code = ''): string {
+        if ($ok && $card !== null) {
+            $body = '<section class="page-head"><h1>کارت هدیهٔ شما آماده است</h1>'
+                . '<p>پرداخت با موفقیت انجام شد.</p></section>'
+                . '<div class="booking-done"><p class="booking-ref">کد کارت هدیه: <strong dir="ltr">' . e((string)$card['code']) . '</strong></p>'
+                . '<p>مبلغ: ' . self::num(number_format((float)$card['amount'])) . ' ریال</p>'
+                . (($card['recipient_name'] ?? null) ? '<p>گیرنده: ' . e((string)$card['recipient_name']) . '</p>' : '')
+                . '<p class="center-card-note">این کد را نگه دارید؛ هنگام مراجعه همان را اعلام کنید. اعتبار کارت یک سال است.</p>'
+                . '<p><a class="link-strong" href="' . e(self::url('home')) . '">بازگشت به صفحهٔ اصلی</a></p></div>';
+            return self::layout('کارت هدیه', $body, 'gift');
+        }
+        $body = '<section class="page-head"><h1>پرداخت انجام نشد</h1>'
+            . '<p>' . e($error !== '' ? $error : 'پرداخت تأیید نشد یا لغو شد.') . '</p>'
+            . (!$ok && $code !== '' ? '<p class="state-note">کد سفارش: <span dir="ltr">' . e($code) . '</span></p>' : '')
+            . '<p class="section-more"><a class="btn-quiet" href="' . e(self::url('gift')) . '">تلاش دوباره</a></p></section>';
+        return self::layout('پرداخت ناموفق', $body, 'gift');
     }
 
     /** Shown for an unknown catalog slug, with a way back instead of a dead end. */

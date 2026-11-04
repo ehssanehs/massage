@@ -72,6 +72,14 @@ branches, roles, users, settings, customers, services, therapists, appointments,
 - مسیرها: `booking` (عمومی، دو مرحله‌ای بدون جاوااسکریپت، با `?ref=` برای پیگیری وضعیت) و `online` (پنل پرسنل، تأیید/لغو با `appointments.manage`).
 - مهاجرت `007_online_booking.sql` ستون‌های `source` و `booking_ref` و ایندکس‌ها را اضافه می‌کند و تکرارشدنی است.
 
+## کارت هدیه و پرداخت
+
+- `app/Services/GiftCard.php`: ساخت سفارش (کد `GIFT-XXXX-XXXX`)، تأیید callback، فهرست پنل. مبلغ و کد سمت سرور تعیین می‌شوند و مبلغ verify از رکورد خوانده می‌شود.
+- `app/Services/Payment/Zarinpal.php`: REST v4 زرین‌پال (request/verify). `$transport` تنها برای تست است تا payload بدون شبکه بررسی شود. کدهای خطا به فارسی نگاشت می‌شوند.
+- درایور: `PAYMENT_DRIVER=zarinpal|fake`؛ بدون مرچنت‌آیدی هیچ درگاهی فعال نیست و فرم سایت مخفی می‌شود.
+- مسیرها: `gift` (عمومی، POST → redirect به درگاه) و `payment.callback` (بدون ورود، با authority) و `gifts` (پنل، `packages.view`/`packages.manage`).
+- جدول `gift_cards` در پایگاه‌دادهٔ محتوای سایت است؛ `bin/console migrate|seed` وقتی `SITE_DATABASE` تنظیم باشد آن را هم پوشش می‌دهد.
+
 ## قراردادهای مهم (برای توسعه آینده)
 - هر فرم POST با CSRF (`View::csrf` / `Security::verifyCsrf`).
 - خروجی‌ها با `e()`؛ تاریخ ورودی کاربر جلالی است، ذخیره میلادی (`Jalali::toGregorian` در normalize_post).

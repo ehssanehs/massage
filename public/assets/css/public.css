@@ -627,3 +627,9 @@ p { margin: 0 0 1em; }
   .booking-pick .btn-quiet { width: 100%; }
   .booking-form { padding: 18px; }
 }
+
+/* --- gift card ------------------------------------------------------------ */
+
+.gift-form { max-width: 640px; }
+.gift-form .slots { gap: 10px; }
+.gift-form .slot span { min-width: 130px; }

@@ -801,9 +801,45 @@ function customer_profile_extra(int $id): string {
     <?php return (string)ob_get_clean();
 }
 
+if ($route === 'payment.callback') {
+    // The buyer returns from the gateway here. No login, no session state: the
+    // authority is the only thing that identifies the order.
+    $authority = trim((string)($_GET['Authority'] ?? ''));
+    $gwStatus = strtoupper(trim((string)($_GET['Status'] ?? '')));
+    if ($authority === '') {
+        echo \App\Support\PublicSite::paymentResult(false, null, 'پاسخ درگاه ناقص بود.');
+        exit;
+    }
+    if ($gwStatus !== '' && $gwStatus !== 'OK') {
+        echo \App\Support\PublicSite::paymentResult(false, null, 'پرداخت لغو شد یا ناتمام ماند.');
+        exit;
+    }
+    $completed = \App\Services\GiftCard::complete($authority);
+    echo \App\Support\PublicSite::paymentResult((bool)$completed['ok'], $completed['card'] ?? null, (string)($completed['error'] ?? ''));
+    exit;
+}
+
 $sectionKey = \App\Support\PublicSite::sectionKeyFor($route);
-if (in_array($route, ['home', 'massage-types', 'massage-type', 'education', 'booking'], true) || $sectionKey !== null) {
+if (in_array($route, ['home', 'massage-types', 'massage-type', 'education', 'booking', 'gift'], true) || $sectionKey !== null) {
     if (Auth::user()) redirect('dashboard');
+    if ($route === 'gift') {
+        $callback = trim((string)env_value('PAYMENT_CALLBACK_URL', ''));
+        if ($callback === '') {
+            $scheme = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') ? 'https' : 'http';
+            $callback = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')
+                . \App\Support\Url::plain('payment.callback');
+        }
+        $giftResult = null;
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $giftResult = \App\Services\GiftCard::create($_POST, $callback);
+            if ($giftResult['ok'] && !empty($giftResult['redirect'])) {
+                header('Location: ' . $giftResult['redirect']);
+                exit;
+            }
+        }
+        echo \App\Support\PublicSite::gift($giftResult);
+        exit;
+    }
     if ($route === 'booking') {
         // A POST carries the centre as a hidden field, so read both bags.
         $params = array_merge($_GET, $_POST);
@@ -1672,6 +1708,56 @@ if($route==='site-content'){
       <p class="text-muted mb-2">فهرست ماساژها (عنوان، توضیح، تصویرسازی، مدت و قیمت) از صفحهٔ <a href="<?=e(url('site_types'))?>">کاتالوگ ماساژها</a> مدیریت می‌شود.</p>
     </div>
     <?php echo View::render('محتوای سایت', ob_get_clean()); exit;
+}
+
+if($route==='gifts'){
+    // Gift cards sold on the public site. They live in the site database, not in
+    // a section's CRM tables, so the panel reads them through GiftCard.
+    Auth::requireCan('packages.view');
+    if($_SERVER['REQUEST_METHOD']==='POST'){
+        Auth::requireCan('packages.manage');
+        $cardId = (int)($_POST['id'] ?? 0);
+        if($cardId > 0 && ($_POST['action'] ?? '') === 'redeem'){
+            $st = \App\Support\SiteContent::pdo()->prepare("UPDATE gift_cards SET status='redeemed', used_at=NOW(), updated_at=NOW() WHERE id=? AND status='paid'");
+            $st->execute([$cardId]);
+            Audit::log('gift.redeem','gift_cards',$cardId);
+            toast('کارت هدیه استفاده‌شده ثبت شد.');
+        }
+        redirect('gifts');
+    }
+    $cards = \App\Services\GiftCard::recent(200);
+    $rows = '';
+    $total = 0;
+    foreach($cards as $c){
+        if($c['status'] === 'paid') $total += (float)$c['amount'];
+        $action = $c['status'] === 'paid'
+            ? '<form method="post" class="d-inline">'.View::csrf().'<input type="hidden" name="id" value="'.(int)$c['id'].'"><button name="action" value="redeem" class="btn btn-sm btn-outline-primary">استفاده شد</button></form>'
+            : '';
+        $rows .= '<tr><td><span dir="ltr">'.e((string)$c['code']).'</span></td>'
+            . '<td>'.e(Jalali::fa(number_format((float)$c['amount']))).'</td>'
+            . '<td>'.status_badge((string)$c['status']).'</td>'
+            . '<td>'.e($c['buyer_name']).'<br><small class="text-muted" dir="ltr">'.e((string)$c['buyer_mobile']).'</small></td>'
+            . '<td>'.e((string)($c['recipient_name'] ?? '')).'</td>'
+            . '<td>'.($c['paid_at'] ? e(Jalali::dateTime((string)$c['paid_at'])) : '—').'</td>'
+            . '<td>'.($c['expires_at'] ? e(Jalali::toJalali((string)$c['expires_at'])) : '—').'</td>'
+            . '<td>'.$action.'</td></tr>';
+    }
+    ob_start(); ?>
+    <div class="card p-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div><h3 class="mb-1">کارت‌های هدیه</h3><p class="text-muted mb-0">کارت‌هایی که از سایت خریده شده‌اند. مبلغ کارت‌های پرداخت‌شده: <strong><?=e(Jalali::fa(number_format($total)))?></strong> ریال.</p></div>
+        <a class="btn btn-outline-primary" target="_blank" rel="noopener" href="<?=e(\App\Support\Url::plain('gift'))?>">صفحهٔ فروش در سایت</a>
+      </div>
+      <?php if(!$cards): ?>
+        <p class="empty">هنوز کارت هدیه‌ای فروخته نشده است.</p>
+      <?php else: ?>
+      <div class="table-responsive"><table class="table align-middle">
+        <thead><tr><th>کد</th><th>مبلغ (ریال)</th><th>وضعیت</th><th>خریدار</th><th>گیرنده</th><th>پرداخت</th><th>انقضا</th><th></th></tr></thead>
+        <tbody><?=$rows?></tbody>
+      </table></div>
+      <?php endif; ?>
+    </div>
+    <?php echo View::render('کارت‌های هدیه', ob_get_clean()); exit;
 }
 
 if($route==='backup'){ Auth::requireCan('backup.manage'); $error=null; if($_SERVER['REQUEST_METHOD']==='POST'){ try{BackupService::create(); toast('پشتیبان تهیه شد.'); redirect('backup');}catch(Throwable $e){$error=$e->getMessage();}} ob_start(); if($error) echo '<div class="alert alert-danger">'.e($error).'</div>'; ?><div class="card p-4"><form method="post"><?=View::csrf()?><button class="btn btn-primary">ایجاد بکاپ دستی</button></form><h4 class="mt-4">فایل‌های بکاپ</h4><ul><?php foreach(BackupService::list() as $f): ?><li><?=e(BackupService::displayName($f))?></li><?php endforeach;?></ul><p class="text-muted">برای بکاپ زمان‌بندی‌شده از cron طبق مستندات استفاده کنید.</p></div><?php echo View::render('پشتیبان‌گیری', ob_get_clean()); exit; }
