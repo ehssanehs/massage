@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/../app/bootstrap.php';
 
-use App\Core\Auth; use App\Core\DB; use App\Core\Security; use App\Support\View; use App\Support\Tenant; use App\Support\Jalali; use App\Support\DateRange; use App\Support\ClockTime; use App\Support\SearchQuery; use App\Support\BirthMonth; use App\Services\Audit; use App\Services\FollowUpService; use App\Services\SalaryService; use App\Services\ArabCommission; use App\Services\RetentionService; use App\Services\BackupService; use App\Services\PaymentMethods; use App\Services\Credit;
+use App\Core\Auth; use App\Core\DB; use App\Core\Security; use App\Support\View; use App\Support\Tenant; use App\Support\Jalali; use App\Support\DateRange; use App\Support\ClockTime; use App\Support\SearchQuery; use App\Support\BirthMonth; use App\Support\SiteContent; use App\Services\Audit; use App\Services\FollowUpService; use App\Services\SalaryService; use App\Services\ArabCommission; use App\Services\RetentionService; use App\Services\BackupService; use App\Services\PaymentMethods; use App\Services\Credit;
 
 Tenant::selectFromRequest();
 if (!isset($_GET['r']) && ($pathRoute = Tenant::routeFromRequest()) !== null) $_GET['r'] = $pathRoute;
@@ -802,9 +802,19 @@ function customer_profile_extra(int $id): string {
 }
 
 $sectionKey = \App\Support\PublicSite::sectionKeyFor($route);
-if ($route === 'home' || $sectionKey !== null) {
+if (in_array($route, ['home', 'massage-types', 'massage-type', 'education'], true) || $sectionKey !== null) {
     if (Auth::user()) redirect('dashboard');
-    echo $sectionKey === null ? \App\Support\PublicSite::home() : \App\Support\PublicSite::section($sectionKey);
+    if ($route === 'home') {
+        echo \App\Support\PublicSite::home();
+    } elseif ($route === 'massage-type') {
+        $page = \App\Support\PublicSite::type((string)($_GET['slug'] ?? ''));
+        if ($page === null) { http_response_code(404); echo \App\Support\PublicSite::notFound(); }
+        else { echo $page; }
+    } elseif ($route === 'massage-types' || $sectionKey === 'massage') {
+        echo \App\Support\PublicSite::services();
+    } else {
+        echo \App\Support\PublicSite::education();
+    }
     exit;
 }
 
@@ -1535,6 +1545,67 @@ if($route==='settings'){
       </form>
     </div>
     <?php echo View::render('تنظیمات', ob_get_clean()); exit; }
+if($route==='site-content'){
+    // Editable copy of the public site. Every block is a row in site_blocks, so
+    // the owner changes text from the panel instead of editing PHP files.
+    Auth::requireCan('settings.manage');
+    $groups = ['site'=>'برند و کلیات','home'=>'صفحهٔ اصلی','centers'=>'مراکز آقایان و بانوان','services'=>'انواع ماساژ','education'=>'بخش آموزش','contact'=>'تماس، آدرس و ساعت کار','social'=>'شبکه‌های اجتماعی','footer'=>'پانویس'];
+    $labels = [
+        'site.brand'=>'نام نمایشی سایت',
+        'home.hero.title'=>'عنوان اصلی صفحه','home.hero.lead'=>'متن معرفی زیر عنوان','home.hero.primary'=>'متن دکمهٔ اصلی','home.hero.secondary'=>'متن دکمهٔ دوم',
+        'home.intro.title'=>'عنوان بخش معرفی','home.intro.body'=>'متن بخش معرفی',
+        'centers.title'=>'عنوان بخش مراکز','centers.men.title'=>'عنوان مرکز آقایان','centers.men.body'=>'توضیح مرکز آقایان','centers.women.title'=>'عنوان مرکز بانوان','centers.women.body'=>'توضیح مرکز بانوان',
+        'services.title'=>'عنوان فهرست ماساژها','services.lead'=>'توضیح فهرست ماساژها',
+        'education.title'=>'عنوان بخش آموزش','education.body'=>'توضیح بخش آموزش',
+        'contact.title'=>'عنوان تماس','contact.body'=>'توضیح تماس','contact.phone'=>'شماره تماس','contact.address'=>'آدرس','contact.hours'=>'ساعت کاری',
+        'social.instagram'=>'نشانی اینستاگرام','social.telegram'=>'نشانی تلگرام','social.whatsapp'=>'شماره واتساپ',
+        'footer.note'=>'متن پانویس (اختیاری)',
+    ];
+    if($_SERVER['REQUEST_METHOD']==='POST'){
+        $saved = 0;
+        foreach(SiteContent::blocks() as $key=>$row){
+            if(!isset($_POST['blocks'][$key])) continue;
+            SiteContent::setBlock($key, Security::cleanString((string)$_POST['blocks'][$key]));
+            $saved++;
+        }
+        Audit::log('site.content.update','site_blocks',null,['blocks'=>$saved]);
+        toast('محتوای سایت ذخیره شد.');
+        redirect('site-content');
+    }
+    $byGroup = SiteContent::grouped();
+    ob_start(); ?>
+    <div class="card p-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div><h3 class="mb-1">محتوای سایت عمومی</h3><p class="text-muted mb-0">هر تغییری اینجا ذخیره شود، بلافاصله در سایت عمومی نمایش داده می‌شود.</p></div>
+        <a class="btn btn-outline-primary" target="_blank" rel="noopener" href="<?=e(\App\Support\Url::plain('home'))?>">دیدن سایت</a>
+      </div>
+      <form method="post">
+        <?=View::csrf()?>
+        <?php foreach($groups as $group=>$groupLabel): $rows=$byGroup[$group]??[]; if(!$rows) continue; ?>
+          <fieldset class="mb-4">
+            <legend class="h6 text-muted"><?=e($groupLabel)?></legend>
+            <?php foreach($rows as $key=>$row): $label=$labels[$key]??$key; $value=(string)($row['value']??''); ?>
+              <div class="mb-3">
+                <label class="form-label" for="b-<?=e($key)?>"><?=e($label)?></label>
+                <?php if(($row['type']??'text')==='url'): ?>
+                  <input class="form-control" id="b-<?=e($key)?>" name="blocks[<?=e($key)?>]" type="url" dir="ltr" value="<?=e($value)?>">
+                <?php elseif(($row['type']??'text')==='text' && mb_strlen($value) < 80): ?>
+                  <input class="form-control" id="b-<?=e($key)?>" name="blocks[<?=e($key)?>]" value="<?=e($value)?>">
+                <?php else: ?>
+                  <textarea class="form-control" id="b-<?=e($key)?>" name="blocks[<?=e($key)?>]" rows="3"><?=e($value)?></textarea>
+                <?php endif; ?>
+              </div>
+            <?php endforeach; ?>
+          </fieldset>
+        <?php endforeach; ?>
+        <button class="btn btn-primary">ذخیرهٔ تغییرات</button>
+      </form>
+      <hr class="my-4">
+      <p class="text-muted mb-2">فهرست ماساژها (عنوان، توضیح، تصویرسازی، مدت و قیمت) از صفحهٔ <a href="<?=e(url('site_types'))?>">کاتالوگ ماساژها</a> مدیریت می‌شود.</p>
+    </div>
+    <?php echo View::render('محتوای سایت', ob_get_clean()); exit;
+}
+
 if($route==='backup'){ Auth::requireCan('backup.manage'); $error=null; if($_SERVER['REQUEST_METHOD']==='POST'){ try{BackupService::create(); toast('پشتیبان تهیه شد.'); redirect('backup');}catch(Throwable $e){$error=$e->getMessage();}} ob_start(); if($error) echo '<div class="alert alert-danger">'.e($error).'</div>'; ?><div class="card p-4"><form method="post"><?=View::csrf()?><button class="btn btn-primary">ایجاد بکاپ دستی</button></form><h4 class="mt-4">فایل‌های بکاپ</h4><ul><?php foreach(BackupService::list() as $f): ?><li><?=e(BackupService::displayName($f))?></li><?php endforeach;?></ul><p class="text-muted">برای بکاپ زمان‌بندی‌شده از cron طبق مستندات استفاده کنید.</p></div><?php echo View::render('پشتیبان‌گیری', ob_get_clean()); exit; }
 if($route==='audit'){ Auth::requireCan('audit.view'); $rows=DB::select('SELECT a.*, u.name user FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 200'); ob_start(); ?><div class="card p-3"><table class="table"><tr><th>زمان</th><th>کاربر</th><th>عمل</th><th>رکورد</th><th>IP</th></tr><?php foreach($rows as $r): ?><tr><td><span class="date-time"><?=e(Jalali::dateTime($r['created_at'], true))?></span></td><td><?=e($r['user'])?></td><td><?=e($r['action'])?></td><td><?=e($r['entity'].' #'.$r['entity_id'])?></td><td><?=e($r['ip_address'])?></td></tr><?php endforeach;?></table></div><?php echo View::render('ممیزی', ob_get_clean()); exit; }
 http_response_code(404); echo View::render('یافت نشد','<div class="alert alert-warning">صفحه یافت نشد.</div>');

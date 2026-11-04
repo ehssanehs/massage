@@ -52,6 +52,16 @@ branches, roles, users, settings, customers, services, therapists, appointments,
 - همهٔ فرم‌ها فقط برای دارندهٔ `followups.manage` رندر می‌شوند و ارسال آن‌ها هم سمت سرور همان مجوز را لازم دارد.
 - تست‌ها: `node --test tests/followup-create-routes.test.js` و بخش «پیگیری دستی» در `tests/followup-matrix-http.py`.
 
+## سایت عمومی
+
+- `app/Support/PublicSite.php` صفحهٔ اصلی، فهرست ماساژها، صفحهٔ هر ماساژ، آموزش و صفحهٔ ۴۰۴ را می‌سازد. عنوان‌ها و متن‌ها از `SiteContent` می‌آیند و کاتالوگ از جدول `massage_types`.
+- `app/Support/SiteContent.php` اتصال اختصاصی محتوای سایت را می‌سازد (`SITE_DATABASE`، وگرنه `DB_DATABASE`، و در نصب دوبخشی `DB_DATABASE_MEN`). تنها جدول‌هایی که می‌خواند `site_blocks` و `massage_types` هستند؛ صفحهٔ عمومی هیچ جدول CRM را باز نمی‌کند. `SiteContent::$fixtures` فقط برای هارنس تست است.
+- مسیرها: `home`، `massage-types` (فهرست)، `massage-type&slug=...` (صفحهٔ هر ماساژ)، `education`؛ به‌علاوهٔ نام‌های قدیمی `public.massage` و `public.education` که همان صفحه‌ها را برمی‌گردانند.
+- نام مسیر `services` عمداً برای ماژول CRM «خدمات» باقی مانده است؛ فهرست عمومی `massage-types` نام دارد تا صفحهٔ پرسنل پوشانده نشود.
+- پنل: `site-content` (ویرایش متن‌ها با مجوز `settings.manage`، فقط کلیدهای موجود در `site_blocks` ذخیره می‌شوند) و ماژول `site_types` (کاتالوگ، با مجوز `services`).
+- تصویرسازی‌ها در `public/assets/img/massage/*.svg`؛ کلید هر تصویر در ستون `illustration` است و فهرست مجاز در `config/public-site.php`.
+- استایل: `public/assets/css/public.css` با پالت کاغذ/جنگل/خاک‌رس، قوس به‌عنوان نشانهٔ تکرارشونده، و سه تنظیم ENERGY 2 / RHYTHM 2 / MOTION 1.
+
 ## قراردادهای مهم (برای توسعه آینده)
 - هر فرم POST با CSRF (`View::csrf` / `Security::verifyCsrf`).
 - خروجی‌ها با `e()`؛ تاریخ ورودی کاربر جلالی است، ذخیره میلادی (`Jalali::toGregorian` در normalize_post).

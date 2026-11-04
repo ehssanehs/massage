@@ -19,5 +19,7 @@ return [
  ['route'=>'users','label'=>'کاربران و نقش‌ها','icon'=>'bi-shield-lock','perm'=>'users.manage'],
  ['route'=>'audit','label'=>'ممیزی','icon'=>'bi-journal-check','perm'=>'audit.view'],
  ['route'=>'settings','label'=>'تنظیمات','icon'=>'bi-gear','perm'=>'settings.manage'],
+ ['route'=>'site-content','label'=>'محتوای سایت','icon'=>'bi-window-sidebar','perm'=>'settings.manage'],
+ ['route'=>'site_types','label'=>'کاتالوگ ماساژها','icon'=>'bi-images','perm'=>'services.view'],
  ['route'=>'backup','label'=>'پشتیبان‌گیری','icon'=>'bi-database-down','perm'=>'backup.manage'],
 ];

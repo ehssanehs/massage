@@ -143,13 +143,13 @@ def main():
         # --- public landing page ---------------------------------------------
         status, body, _ = server.get('/')
         check(status == 200, 'public home renders at /')
-        for text in ('خدمات ماساژ', 'بخش آموزش', 'ورود پرسنل'):
+        for text in ('انواع ماساژ', 'آموزش', 'ورود پرسنل'):
             check(text in body, f'public home shows «{text}»')
         check('href="/index.php?r=login"' in body, 'public home links to the staff login')
-        check('href="/index.php?r=public.massage"' in body and 'href="/index.php?r=public.education"' in body,
-              'public home offers both main sections')
+        check('href="/index.php?r=massage-types"' in body and 'href="/index.php?r=education"' in body,
+              'public home offers the catalog and the education page')
 
-        for route, title in (('public.massage', 'خدمات ماساژ'), ('public.education', 'بخش آموزش')):
+        for route, title in (('massage-types', 'انواع ماساژ'), ('education', 'بخش آموزش')):
             status, page, _ = server.get(f'/index.php?r={route}')
             check(status == 200 and title in page, f'public section page renders: {route}')
             check('ورود پرسنل' in page, f'{route} still offers the staff entry')

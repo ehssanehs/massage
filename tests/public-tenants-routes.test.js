@@ -17,23 +17,29 @@ const BOTH = {men:'test_men', women:'test_women'};
 test('public root presents massage, education and staff entry without opening a CRM database', () => {
   const result = route({r:'home'}, undefined, {}, BOTH);
   assert.equal(result.status, 200);
-  assert.match(result.body, /خدمات ماساژ/);
-  assert.match(result.body, /بخش آموزش/);
+  assert.match(result.body, /انواع ماساژ/);
+  assert.match(result.body, /آموزش/);
   assert.match(result.body, /ورود پرسنل/);
-  assert.match(result.body, /href="\/index\.php\?r=public\.massage"/);
-  assert.match(result.body, /href="\/index\.php\?r=public\.education"/);
+  assert.match(result.body, /href="\/index\.php\?r=massage-types"/);
+  assert.match(result.body, /href="\/index\.php\?r=education"/);
   assert.match(result.body, /href="\/index\.php\?r=login"/);
   assert.equal(result.queries.length, 0, 'the landing page must not touch a CRM database');
 });
 
 test('each public section page is reachable and still opens no database', () => {
-  for (const [key, title] of [['massage','خدمات ماساژ'],['education','بخش آموزش']]) {
-    const page = route({r:`public.${key}`}, undefined, {}, BOTH);
-    assert.equal(page.status, 200);
-    assert.match(page.body, new RegExp(title));
+  for (const [name, title] of [['massage-types','انواع ماساژ'],['education','بخش آموزش'],['public.massage','انواع ماساژ']]) {
+    const page = route({r:name}, undefined, {}, BOTH);
+    assert.equal(page.status, 200, name);
+    assert.match(page.body, new RegExp(title), name);
     assert.match(page.body, /href="\/index\.php\?r=home"/, 'section pages link back home');
     assert.equal(page.queries.length, 0, 'public section pages must not touch a CRM database');
   }
+});
+
+test('the staff CRM services module still owns the services route', () => {
+  const crm = route({r:'services'}, undefined, {uid:1, tenant:'men', _csrf:'t'}, BOTH);
+  assert.equal(crm.status, 200, 'the public site must not shadow the CRM services module');
+  assert.match(crm.body, /خدمات/);
 });
 
 test('each section owns its own database and prefixes its own URLs', () => {
@@ -78,7 +84,7 @@ test('a section URL redirects into that section when no session exists yet', () 
 test('links keep the mount point when the app is served from a subdirectory', () => {
   const home = route({r:'home'}, undefined, {}, BOTH, '/massage/public/index.php');
   assert.match(home.body, /href="\/massage\/public\/index\.php\?r=login"/);
-  assert.match(home.body, /href="\/massage\/public\/index\.php\?r=public\.massage"/);
+  assert.match(home.body, /href="\/massage\/public\/index\.php\?r=massage-types"/);
   assert.match(home.body, /href="\/massage\/public\/men\/index\.php\?r=login"/, 'the section entry point keeps the subdirectory');
   assert.match(home.body, /"\/massage\/public\/assets\/css\/public\.css"/);
   assert.doesNotMatch(home.body, /href="\/index\.php/, 'nothing points at the document root');
