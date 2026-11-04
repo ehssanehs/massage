@@ -5,11 +5,11 @@ const path = require('node:path');
 const VOID = new Set(['meta','link','br','img','input','hr','source','area','base','col','embed','param','track','wbr']);
 const TENANTS = {men: 'test_men', women: 'test_women'};
 let failures = 0;
-for (const route of ['home', 'public.massage', 'public.education', 'login']) {
+for (const route of ['home', 'massage-types', 'public.massage', 'public.education', 'login']) {
   const out = execFileSync(process.env.PHP_BIN || 'php', [path.join(__dirname, 'route-harness.php'), JSON.stringify({get: {r: route}, session: {}, tenants: TENANTS})], {cwd: path.join(__dirname, '..'), encoding: 'utf8'});
   const {body, status, error} = JSON.parse(out);
   const opened = {}, closed = {};
-  for (const m of body.matchAll(/<([a-zA-Z][\w-]*)(?:\s[^>]*?)?\/?>/g)) if (!VOID.has(m[1].toLowerCase())) opened[m[1].toLowerCase()] = (opened[m[1].toLowerCase()] || 0) + 1;
+  for (const m of body.matchAll(/<([a-zA-Z][\w-]*)(?:\s[^>]*?)?(\/?)>/g)) { if (VOID.has(m[1].toLowerCase()) || m[2] === '/') continue; opened[m[1].toLowerCase()] = (opened[m[1].toLowerCase()] || 0) + 1; }
   for (const m of body.matchAll(/<\/([a-zA-Z][\w-]*)>/g)) closed[m[1].toLowerCase()] = (closed[m[1].toLowerCase()] || 0) + 1;
   const bad = Object.keys(opened).filter(t => (closed[t] || 0) !== opened[t]).map(t => `${t} ${opened[t]}/${closed[t] || 0}`);
   const title = (body.match(/<title>([^<]*)<\/title>/) || [])[1];

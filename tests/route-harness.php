@@ -21,6 +21,8 @@ namespace App\Core {
 
         public static function select(string $sql, array $params = []): array {
             self::record($sql, $params);
+            // Public-site catalog list (admin module); fixtures keep it off MySQL.
+            if (str_contains($sql, 'FROM massage_types')) return self::$fixtures['massage_types'] ?? [];
             // Follow-up matrix: rows/columns are explicit fixtures because the
             // pivot depends on per-customer follow-up counts, which a single
             // generic fixture row cannot express.
@@ -131,6 +133,11 @@ namespace {
     $input = json_decode($argv[1] ?? '{}', true, 512, JSON_THROW_ON_ERROR);
     \App\Core\DB::$fixtures = $input['fixtures'] ?? [];
     \App\Core\DB::$overlap = $input['overlap'] ?? false;
+    // Public-site content is read through SiteContent; the harness answers it
+    // from fixtures so no route test needs a MySQL server. The class file is
+    // loaded directly because this runs before the app autoloader exists.
+    require_once __DIR__ . '/../app/Support/SiteContent.php';
+    \App\Support\SiteContent::$fixtures = $input['site'] ?? ['blocks' => [], 'types' => []];
     $_GET = $input['get'] ?? ['r'=>'customers.show', 'id'=>1];
     $_POST = $input['post'] ?? [];
     // Two-section mode is opt-in: with no per-section database configured the
@@ -155,7 +162,7 @@ namespace {
     ob_start();
     register_shutdown_function(static function (): void {
         $html = ob_get_clean();
-        $result = ['body'=>$html, 'status'=>http_response_code() ?: 200, 'queries'=>\App\Core\DB::$queries, 'writes'=>\App\Core\DB::$writes, 'session'=>$_SESSION, 'error'=>error_get_last()];
+        $result = ['body'=>$html, 'status'=>http_response_code() ?: 200, 'queries'=>\App\Core\DB::$queries, 'writes'=>\App\Core\DB::$writes, 'site_writes'=>\App\Support\SiteContent::$fixtures['writes'] ?? [], 'session'=>$_SESSION, 'error'=>error_get_last()];
         if (session_status() === PHP_SESSION_ACTIVE) session_destroy();
         echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     });

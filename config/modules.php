@@ -10,4 +10,18 @@ return [
  'inventory'=>['title'=>'انبار و ملزومات','table'=>'inventory_items','perm'=>'inventory','search'=>['name','category'],'columns'=>['name'=>'کالا','category'=>'دسته','quantity'=>'موجودی','minimum_quantity'=>'حداقل','unit'=>'واحد','status'=>'وضعیت'],'fields'=>['name'=>['نام کالا','text','required'],'category'=>['دسته','text'],'quantity'=>['موجودی','number'],'minimum_quantity'=>['حداقل هشدار','number'],'unit'=>['واحد','text'],'status'=>['وضعیت','select',['active'=>'فعال','inactive'=>'غیرفعال']]]],
  'packages'=>['title'=>'پکیج‌ها و عضویت','table'=>'customer_packages','perm'=>'packages','search'=>['title','payment_status'],'columns'=>['customer_name'=>'مشتری','title'=>'عنوان','total_sessions'=>'کل','used_sessions'=>'استفاده شده','expires_at'=>'انقضا','payment_status'=>'پرداخت'],'fields'=>['customer_id'=>['مشتری','customer','required'],'title'=>['عنوان پکیج','text','required'],'total_sessions'=>['تعداد کل جلسات','number','required'],'used_sessions'=>['جلسات استفاده شده','number'],'price'=>['قیمت','number'],'payment_status'=>['وضعیت پرداخت','select',['paid'=>'پرداخت شده','partial'=>'بخشی','unpaid'=>'پرداخت نشده']],'credit_used'=>['مبلغ استفاده از اعتبار','number','virtual'],'starts_at'=>['شروع','date'],'expires_at'=>['انقضا','date'],'status'=>['وضعیت','select',['active'=>'فعال','expired'=>'منقضی','cancelled'=>'لغو شده']]]],
  'campaigns'=>['title'=>'کمپین‌های بازاریابی','table'=>'campaigns','perm'=>'campaigns','search'=>['name','segment','channel'],'columns'=>['name'=>'نام','segment'=>'گروه هدف','channel'=>'کانال','status'=>'وضعیت','starts_at'=>'شروع'],'fields'=>['name'=>['نام کمپین','text','required'],'segment'=>['گروه هدف','text'],'channel'=>['کانال','select',['sms'=>'پیامک','whatsapp'=>'واتساپ','email'=>'ایمیل','telegram'=>'تلگرام','phone'=>'تماس تلفنی']],'message'=>['پیام','textarea'],'starts_at'=>['شروع','date'],'ends_at'=>['پایان','date'],'status'=>['وضعیت','select',['draft'=>'پیش‌نویس','scheduled'=>'زمان‌بندی شده','sent'=>'ارسال شده','cancelled'=>'لغو شده']]]],
+ // کاتالوگ عمومی سایت. با مجوز خدمات محافظت می‌شود: هر که خدمات را می‌سازد،
+ // همان می‌تواند کاتالوگ را هم ویرایش کند. این جدول در پایگاه‌دادهٔ محتوای
+ // سایت است، نه لزوماً در همان پایگاه‌دادهٔ CRUD.
+ 'site_types'=>['title'=>'کاتالوگ ماساژها (سایت)','table'=>'massage_types','perm'=>'services','search'=>['title','slug','summary','body'],'columns'=>['sort_order'=>'ترتیب','title'=>'عنوان','slug'=>'نشانی صفحه','duration_minutes'=>'مدت','price_from'=>'قیمت از','status'=>'وضعیت'],'fields'=>[
+  'title'=>['عنوان','text','required'],
+  'slug'=>['نشانی صفحه (یکتا)','text','required'],
+  'summary'=>['خلاصهٔ یک‌خطی','text'],
+  'body'=>['توضیح کامل','textarea'],
+  'illustration'=>['تصویرسازی','select',['relax'=>'ریلکسی','therapeutic'=>'درمانی','hot-stone'=>'سنگ داغ','swedish'=>'سوئدی','thai'=>'تایلندی','head-face'=>'سر و صورت','thai-yoga'=>'تای یوگا','yumeiho'=>'یومی هو','reflexology'=>'رفلکسولوژی','foot'=>'فوت ماساژ','hot-towel'=>'حوله داغ','slimming'=>'لاغری','facial'=>'فیشال','foot-detox'=>'پاکسازی پا','spiritual'=>'پاکسازی روح','generic'=>'عمومی']],
+  'duration_minutes'=>['مدت (دقیقه)','number'],
+  'price_from'=>['شروع قیمت','number'],
+  'sort_order'=>['ترتیب نمایش','number'],
+  'status'=>['وضعیت','select',['active'=>'نمایش در سایت','inactive'=>'مخفی']],
+ ]],
 ];
