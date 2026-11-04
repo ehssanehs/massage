@@ -69,6 +69,7 @@ final class PublicSite {
             'home' => 'خانه',
             'massage-types' => 'انواع ماساژ',
             'booking' => 'رزرو نوبت',
+            'booking-status' => 'پیگیری نوبت',
             'gift' => 'کارت هدیه',
             'education' => 'آموزش',
         ];
@@ -368,7 +369,7 @@ final class PublicSite {
                 . '<p>' . e($appointment['service']) . ' — ' . e(Booking::dayLabel($appointment['date'])) . ' ساعت ' . self::num($appointment['time']) . '</p>'
                 . '<p class="booking-ref">کد پیگیری: <strong dir="ltr">' . e((string)$result['ref']) . '</strong></p>'
                 . '<p class="center-card-note">نوبت پس از تأیید مرکز قطعی می‌شود. وضعیت را با همین کد می‌توانید ببینید.</p>'
-                . '<p><a class="link-strong" href="' . e(self::url('booking', array_filter(['section' => $section, 'ref' => (string)$result['ref']]))) . '">مشاهدهٔ وضعیت نوبت</a></p></div>';
+                . '<p><a class="link-strong" href="' . e(self::url('booking-status', ['ref' => (string)$result['ref']])) . '">مشاهدهٔ وضعیت نوبت</a></p></div>';
         } elseif ($result !== null && $result['errors'] !== []) {
             $items = '';
             foreach ($result['errors'] as $error) $items .= '<li>' . e($error) . '</li>';
@@ -417,9 +418,44 @@ final class PublicSite {
         $body = '<section class="page-head"><h1>' . e(SiteContent::block('booking.title', 'رزرو نوبت آنلاین')) . '</h1>'
             . '<p>' . e(SiteContent::block('booking.lead')) . '</p>'
             . ($section !== null ? '<p class="page-head-note">' . e(Booking::sectionLabel($section)) . '</p>' : '')
+            . '<p class="page-head-note">قبلاً نوبت گرفته‌اید؟ <a class="link-strong" href="' . e(self::url('booking-status')) . '">وضعیت نوبت را با کد پیگیری ببینید</a></p>'
             . '</section>'
             . $notice . $status . $pickForm . $slotBlock;
         return self::layout('رزرو نوبت', $body, 'booking', SiteContent::block('booking.lead'));
+    }
+
+    /**
+     * Track a booking by its reference. The guest only knows the code, so the
+     * lookup checks every centre rather than asking them to remember which one.
+     */
+    public static function bookingStatus(string $reference, ?array $found = null, bool $looked = false): string {
+        $field = '<form class="booking-form booking-track" method="get" action="' . e(self::url('booking-status')) . '">'
+            . '<input type="hidden" name="r" value="booking-status">'
+            . '<div class="field"><label for="track-ref">کد پیگیری نوبت</label>'
+            . '<input id="track-ref" name="ref" required maxlength="12" dir="ltr" placeholder="مثلاً 80192C" '
+            . 'autocomplete="off" spellcheck="false" value="' . e(strtoupper($reference)) . '"></div>'
+            . '<button class="btn-solid" type="submit">مشاهدهٔ وضعیت</button>'
+            . '<p class="form-note">این کد را پس از ثبت نوبت دریافت کرده‌اید.</p></form>';
+
+        $result = '';
+        if ($looked) {
+            if ($found === null) {
+                $result = '<div class="booking-error" role="alert"><ul><li>نوبتی با این کد پیدا نشد. کد را بررسی کنید یا با مرکز تماس بگیرید.</li></ul></div>';
+            } else {
+                $when = Booking::dayLabel((string)$found['appointment_date']) . ' ساعت ' . self::num(substr((string)$found['start_time'], 0, 5));
+                $result = '<div class="booking-done"><h2>وضعیت نوبت</h2>'
+                    . '<p class="booking-ref">کد: <strong dir="ltr">' . e((string)$found['booking_ref']) . '</strong></p>'
+                    . '<p>' . e((string)$found['service']) . ' — ' . e($when) . '</p>'
+                    . '<p>وضعیت: <strong>' . e(self::statusLabel((string)$found['status'])) . '</strong></p>'
+                    . (!empty($found['section']) ? '<p class="center-card-note">' . e(Booking::sectionLabel((string)$found['section'])) . '</p>' : '')
+                    . '<p class="center-card-note">برای تغییر یا لغو نوبت، با مرکز تماس بگیرید.</p></div>';
+            }
+        }
+
+        $body = '<section class="page-head"><h1>پیگیری نوبت</h1>'
+            . '<p>کد پیگیری‌ای که هنگام ثبت نوبت گرفتید را وارد کنید تا وضعیت آن را ببینید.</p></section>'
+            . $result . $field;
+        return self::layout('پیگیری نوبت', $body, 'booking-status');
     }
 
     public static function statusLabel(string $status): string {

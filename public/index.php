@@ -897,7 +897,7 @@ if ($route === 'payment.callback') {
 }
 
 $sectionKey = \App\Support\PublicSite::sectionKeyFor($route);
-if (in_array($route, ['home', 'massage-types', 'massage-type', 'education', 'booking', 'gift'], true) || $sectionKey !== null) {
+if (in_array($route, ['home', 'massage-types', 'massage-type', 'education', 'booking', 'gift', 'booking-status'], true) || $sectionKey !== null) {
     if (Auth::user()) redirect('dashboard');
     if ($route === 'gift') {
         $callback = trim((string)env_value('PAYMENT_CALLBACK_URL', ''));
@@ -915,6 +915,14 @@ if (in_array($route, ['home', 'massage-types', 'massage-type', 'education', 'boo
             }
         }
         echo \App\Support\PublicSite::gift($giftResult);
+        exit;
+    }
+    if ($route === 'booking-status') {
+        // Public: the reference is the only credential, and it is looked up
+        // across every centre so the guest does not have to remember which.
+        $reference = trim((string)($_GET['ref'] ?? ''));
+        $found = $reference !== '' ? \App\Services\Booking::findAnywhere($reference) : null;
+        echo \App\Support\PublicSite::bookingStatus($reference, $found, $reference !== '');
         exit;
     }
     if ($route === 'booking') {
