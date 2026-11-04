@@ -22,5 +22,6 @@ return [
  ['route'=>'settings','label'=>'تنظیمات','icon'=>'bi-gear','perm'=>'settings.manage'],
  ['route'=>'site-content','label'=>'محتوای سایت','icon'=>'bi-window-sidebar','perm'=>'settings.manage'],
  ['route'=>'site_types','label'=>'کاتالوگ ماساژها','icon'=>'bi-images','perm'=>'services.view'],
+ ['route'=>'gifts','label'=>'کارت‌های هدیه','icon'=>'bi-gift','perm'=>'packages.view'],
  ['route'=>'backup','label'=>'پشتیبان‌گیری','icon'=>'bi-database-down','perm'=>'backup.manage'],
 ];
