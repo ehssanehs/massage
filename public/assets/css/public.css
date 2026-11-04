@@ -637,3 +637,16 @@ p { margin: 0 0 1em; }
 /* Uploaded photos are cropped to fill the frame; line-art keeps its ratio. */
 .type-card-art img.is-photo,
 .type-page-art img.is-photo { object-fit: cover; }
+
+/* Tracking page: the code is the only credential, so cancelling needs intent. */
+.cancel-box { margin-top: 14px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: var(--radius); background: #fffdf8; }
+.cancel-box summary { cursor: pointer; color: var(--clay-ink); font-weight: 600; min-height: 32px; }
+.cancel-box .form-note { margin: 10px 0; }
+.code-warning {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--clay);
+  border-radius: var(--radius);
+  background: #fdf3ee;
+  color: var(--clay-ink);
+}

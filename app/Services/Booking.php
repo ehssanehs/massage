@@ -200,8 +200,11 @@ final class Booking {
         $duration = max(15, (int)$service['duration_minutes']) * 60;
         $candidates = self::candidates($section, $serviceId, $date);
         if ($candidates === []) return [];
-        $taken = self::taken($section, $date);
+        return self::computeSlots($candidates, self::taken($section, $date), $duration);
+    }
 
+    /** @param array<int, array{0:int,1:int}> $candidates therapist id => [open, close] */
+    private static function computeSlots(array $candidates, array $taken, int $duration): array {
         $byTime = [];
         foreach ($candidates as $therapistId => $window) {
             [$open, $close] = $window;
@@ -220,6 +223,100 @@ final class Booking {
         }
         ksort($byTime);
         return array_values($byTime);
+    }
+
+    /**
+     * Days that actually have a free time for this service.
+     *
+     * The booking form used to list every day a therapist works, even when that
+     * therapist cannot perform the chosen massage, so a guest could pick a day
+     * and then find nothing. This walks the calendar with the service's own
+     * eligibility rules and returns only days with at least one slot.
+     *
+     * @return array<string, array{label: string, slots: int}>
+     */
+    public static function availableDays(?string $section, int $serviceId, int $limit = 12): array {
+        $service = self::service($section, $serviceId);
+        if ($service === null) return [];
+        $duration = max(15, (int)$service['duration_minutes']) * 60;
+        $skills = self::skillSchedules($section, $serviceId);
+        if ($skills === []) return [];
+
+        $from = date('Y-m-d');
+        $to = date('Y-m-d', strtotime('+60 days'));
+        $taken = self::takenBetween($section, $from, $to);
+
+        $out = [];
+        for ($i = 0; $i < 60 && count($out) < $limit; $i++) {
+            $date = date('Y-m-d', strtotime('+' . $i . ' day'));
+            $dayKey = self::SCHEDULE_DAYS[(int)date('w', strtotime($date))] ?? '';
+            if ($dayKey === '') continue;
+            $candidates = [];
+            foreach ($skills as $therapistId => $schedule) {
+                if (!isset($schedule[$dayKey])) continue;
+                $window = self::window((string)$schedule[$dayKey]);
+                if ($window !== null) $candidates[$therapistId] = $window;
+            }
+            if ($candidates === []) continue;
+            $slots = self::computeSlots($candidates, $taken[$date] ?? [], $duration);
+            if ($slots !== []) $out[$date] = ['label' => self::dayLabel($date), 'slots' => count($slots)];
+        }
+        return $out;
+    }
+
+    /** Active therapists who can perform $serviceId, with their full weekly schedule. */
+    private static function skillSchedules(?string $section, int $serviceId): array {
+        $st = self::pdo($section)->prepare(
+            "SELECT id, service_ids, working_schedule FROM therapists WHERE status = 'active' AND deleted_at IS NULL"
+        );
+        $st->execute();
+        $out = [];
+        foreach ($st->fetchAll() as $row) {
+            $skills = array_map('intval', (array)(json_decode((string)$row['service_ids'], true) ?: []));
+            if ($skills !== [] && !in_array($serviceId, $skills, true)) continue;
+            $schedule = json_decode((string)$row['working_schedule'], true);
+            if (is_array($schedule) && $schedule !== []) $out[(int)$row['id']] = $schedule;
+        }
+        return $out;
+    }
+
+    /** Booked intervals for a date range, grouped by date and therapist. */
+    private static function takenBetween(?string $section, string $from, string $to): array {
+        $st = self::pdo($section)->prepare(
+            "SELECT appointment_date, therapist_id, start_time, end_time FROM appointments
+             WHERE appointment_date BETWEEN ? AND ? AND deleted_at IS NULL
+               AND status NOT IN ('cancelled', 'no_show')"
+        );
+        $st->execute([$from, $to]);
+        $out = [];
+        foreach ($st->fetchAll() as $row) {
+            $out[(string)$row['appointment_date']][(int)$row['therapist_id']][] = [
+                self::toSeconds((string)$row['start_time']),
+                self::toSeconds((string)$row['end_time']),
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Cancel a pending online booking. Returns [ok, error].
+     * Only a booking that has not been confirmed yet may be cancelled by the guest.
+     */
+    public static function cancel(?string $section, string $ref): array {
+        $row = self::findByRef($section, $ref);
+        if ($row === null) return ['ok' => false, 'error' => 'نوبتی با این کد پیدا نشد.'];
+        if ((string)$row['status'] !== 'pending') {
+            return ['ok' => false, 'error' => 'این نوبت دیگر در وضعیت «در انتظار تأیید» نیست؛ برای لغو با مرکز تماس بگیرید.'];
+        }
+        $st = self::pdo($section)->prepare(
+            "UPDATE appointments SET status = 'cancelled', updated_at = NOW()
+             WHERE booking_ref = ? AND source = 'online' AND status = 'pending' AND deleted_at IS NULL"
+        );
+        $st->execute([self::normalizeRef($ref)]);
+        if ($st->rowCount() === 0) {
+            return ['ok' => false, 'error' => 'لغو نوبت انجام نشد؛ دوباره تلاش کنید.'];
+        }
+        return ['ok' => true];
     }
 
     /**
@@ -317,6 +414,11 @@ final class Booking {
         ];
     }
 
+    /** A reference is six hex characters; accept any case, spaces or dashes. */
+    public static function normalizeRef(string $ref): string {
+        return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $ref) ?? '');
+    }
+
     /** Look up an online booking by its reference, for the guest status page. */
     public static function findByRef(?string $section, string $ref): ?array {
         $st = self::pdo($section)->prepare(
@@ -324,7 +426,7 @@ final class Booking {
              FROM appointments a JOIN services s ON s.id = a.service_id
              WHERE a.booking_ref = ? AND a.source = 'online' AND a.deleted_at IS NULL LIMIT 1"
         );
-        $st->execute([strtoupper(trim($ref))]);
+        $st->execute([self::normalizeRef($ref)]);
         $row = $st->fetch();
         return $row ?: null;
     }
