@@ -3,6 +3,7 @@ return [
  ['route'=>'dashboard','label'=>'داشبورد','icon'=>'bi-speedometer2','perm'=>'dashboard.view'],
  ['route'=>'customers','label'=>'مشتریان','icon'=>'bi-people','perm'=>'customers.view'],
  ['route'=>'appointments','label'=>'نوبت‌ها','icon'=>'bi-calendar-week','perm'=>'appointments.view'],
+ ['route'=>'online','label'=>'نوبت‌های آنلاین','icon'=>'bi-globe2','perm'=>'appointments.view'],
  ['route'=>'sessions','label'=>'جلسات ماساژ','icon'=>'bi-clipboard2-pulse','perm'=>'sessions.view'],
  ['route'=>'followups','label'=>'مرکز پیگیری','icon'=>'bi-telephone-outbound','perm'=>'followups.view'],
  ['route'=>'followups.matrix','label'=>'ماتریس پیگیری','icon'=>'bi-grid-3x3-gap','perm'=>'followups.view'],

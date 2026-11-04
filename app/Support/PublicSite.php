@@ -2,6 +2,8 @@
 declare(strict_types=1);
 namespace App\Support;
 
+use App\Services\Booking;
+
 /**
  * The public (unauthenticated) site: landing page, the massage catalog and the
  * education page.
@@ -51,6 +53,7 @@ final class PublicSite {
         return [
             'home' => 'خانه',
             'massage-types' => 'انواع ماساژ',
+            'booking' => 'رزرو نوبت',
             'education' => 'آموزش',
         ];
     }
@@ -72,6 +75,12 @@ final class PublicSite {
             . $links . '</div></details><div class="site-nav-wide">' . $links . '</div></nav>'
             . '<a class="site-staff-link" href="' . e(url('login')) . '">ورود پرسنل</a>'
             . '</div></header>';
+    }
+
+    /** Booking link for one center; in a single-section install both point to the same form. */
+    private static function centerBookingLink(string $section): string {
+        $params = Tenant::isMulti() ? ['section' => $section] : [];
+        return '<a class="link-strong" href="' . e(self::url('booking', $params)) . '">رزرو نوبت آنلاین</a>';
     }
 
     /**
@@ -198,8 +207,8 @@ final class PublicSite {
             . '<div class="hero-copy"><h1>' . e($heroTitle) . '</h1>'
             . ($heroLead !== '' ? '<p class="hero-lead">' . e($heroLead) . '</p>' : '')
             . '<div class="hero-actions">'
-            . '<a class="btn-solid" href="' . e(self::url('massage-types')) . '">' . e(SiteContent::block('home.hero.secondary', 'دیدن انواع ماساژ')) . '</a>'
-            . '<a class="btn-quiet" href="#centers">مراکز آقایان و بانوان</a>'
+            . '<a class="btn-solid" href="' . e(self::url('booking')) . '">' . e(SiteContent::block('home.hero.primary', 'رزرو نوبت آنلاین')) . '</a>'
+            . '<a class="btn-quiet" href="' . e(self::url('massage-types')) . '">' . e(SiteContent::block('home.hero.secondary', 'دیدن انواع ماساژ')) . '</a>'
             . '</div></div>'
             . '<div class="hero-art"><img src="' . e(asset('img/massage/hero.svg')) . '" alt="" width="560" height="480" fetchpriority="high"></div>'
             . '</section>'
@@ -208,10 +217,10 @@ final class PublicSite {
             . '<div class="center-grid">'
             . '<article class="center-card center-card-men"><h3>' . e(SiteContent::block('centers.men.title', 'مرکز ماساژ آقایان')) . '</h3>'
             . '<p>' . e(SiteContent::block('centers.men.body')) . '</p>'
-            . '<p class="center-card-note">برای رزرو، با مرکز تماس بگیرید.</p></article>'
+            . '<p class="center-card-note">' . self::centerBookingLink('men') . '</p></article>'
             . '<article class="center-card center-card-women"><h3>' . e(SiteContent::block('centers.women.title', 'مرکز ماساژ بانوان')) . '</h3>'
             . '<p>' . e(SiteContent::block('centers.women.body')) . '</p>'
-            . '<p class="center-card-note">برای رزرو، با مرکز تماس بگیرید.</p></article>'
+            . '<p class="center-card-note">' . self::centerBookingLink('men') . '</p></article>'
             . '</div></section>'
             . '<section class="types-preview" aria-labelledby="types-title">'
             . self::sectionHead(SiteContent::block('services.title', 'انواع ماساژ'), SiteContent::block('services.lead'))
@@ -284,6 +293,123 @@ final class PublicSite {
         $body = '<section class="page-head"><h1>' . e(SiteContent::block('education.title', 'بخش آموزش')) . '</h1>'
             . '<p>' . e(SiteContent::block('education.body')) . '</p></section>';
         return self::layout('آموزش', $body, 'education', SiteContent::block('education.body'));
+    }
+
+    /**
+     * Online booking. Two steps without JavaScript: pick a service and a day,
+     * then choose one of the free times and leave a name and a mobile.
+     * Nothing here trusts the browser: Booking re-reads the schedule and
+     * re-checks the slot when the form is submitted.
+     */
+    public static function booking(?string $section, array $query, ?array $result = null, bool $needsChoice = false): string {
+        if ($needsChoice) {
+            $cards = '';
+            foreach (Booking::SECTIONS as $key => $label) {
+                $cards .= '<a class="center-card center-card-' . e($key) . '" href="' . e(self::url('booking', ['section' => $key])) . '">'
+                    . '<h3>' . e($label) . '</h3><p>زمان‌های خالی این مرکز را ببینید و نوبت بگیرید.</p>'
+                    . '<span class="center-card-note">انتخاب این مرکز</span></a>';
+            }
+            $body = '<section class="page-head"><h1>' . e(SiteContent::block('booking.title', 'رزرو نوبت آنلاین')) . '</h1>'
+                . '<p>' . e(SiteContent::block('booking.lead')) . '</p></section>'
+                . '<div class="center-grid">' . $cards . '</div>';
+            return self::layout('رزرو نوبت', $body, 'booking', SiteContent::block('booking.lead'));
+        }
+
+        $services = Booking::services($section);
+        $days = Booking::days($section, 10);
+        $serviceId = (int)($query['service'] ?? 0);
+        $date = (string)($query['date'] ?? '');
+        $slots = ($serviceId > 0 && isset($days[$date])) ? Booking::slots($section, $serviceId, $date) : [];
+
+        $serviceOptions = '';
+        foreach ($services as $service) {
+            $selected = (int)$service['id'] === $serviceId ? ' selected' : '';
+            $serviceOptions .= '<option value="' . (int)$service['id'] . '"' . $selected . '>'
+                . e($service['name']) . ' — ' . self::num((int)$service['duration_minutes']) . ' دقیقه'
+                . ((float)$service['default_price'] > 0 ? ' (' . self::num(number_format((float)$service['default_price'])) . ' تومان)' : '')
+                . '</option>';
+        }
+        $dayOptions = '';
+        foreach ($days as $value => $label) {
+            $selected = $value === $date ? ' selected' : '';
+            $dayOptions .= '<option value="' . e($value) . '"' . $selected . '>' . e($label) . '</option>';
+        }
+
+        $sectionField = $section !== null ? '<input type="hidden" name="section" value="' . e($section) . '">' : '';
+        $pickForm = '<form class="booking-pick" method="get" action="' . e(self::url('booking')) . '">'
+            . '<input type="hidden" name="r" value="booking">' . $sectionField
+            . '<div class="field"><label for="bk-service">خدمت</label>'
+            . '<select id="bk-service" name="service" required>' . ($serviceId === 0 ? '<option value="">انتخاب کنید</option>' : '') . $serviceOptions . '</select></div>'
+            . '<div class="field"><label for="bk-date">روز</label>'
+            . '<select id="bk-date" name="date" required>' . ($date === '' ? '<option value="">انتخاب کنید</option>' : '') . $dayOptions . '</select></div>'
+            . '<button class="btn-quiet" type="submit">نمایش زمان‌های خالی</button></form>';
+
+        $notice = '';
+        if ($result !== null && $result['ok']) {
+            $appointment = $result['appointment'];
+            $notice = '<div class="booking-done" role="status"><h2>نوبت شما ثبت شد</h2>'
+                . '<p>' . e($appointment['service']) . ' — ' . e(Booking::dayLabel($appointment['date'])) . ' ساعت ' . self::num($appointment['time']) . '</p>'
+                . '<p class="booking-ref">کد پیگیری: <strong dir="ltr">' . e((string)$result['ref']) . '</strong></p>'
+                . '<p class="center-card-note">نوبت پس از تأیید مرکز قطعی می‌شود. وضعیت را با همین کد می‌توانید ببینید.</p>'
+                . '<p><a class="link-strong" href="' . e(self::url('booking', array_filter(['section' => $section, 'ref' => (string)$result['ref']]))) . '">مشاهدهٔ وضعیت نوبت</a></p></div>';
+        } elseif ($result !== null && $result['errors'] !== []) {
+            $items = '';
+            foreach ($result['errors'] as $error) $items .= '<li>' . e($error) . '</li>';
+            $notice = '<div class="booking-error" role="alert"><ul>' . $items . '</ul></div>';
+        }
+
+        $slotBlock = '';
+        if ($services === []) {
+            $slotBlock = '<p class="state-note">هنوز خدمتی برای رزرو آنلاین ثبت نشده است. لطفاً تلفنی هماهنگ کنید.</p>';
+        } elseif ($days === []) {
+            $slotBlock = '<p class="state-note">برنامهٔ کاری ثبت نشده است؛ فعلاً رزرو آنلاین ممکن نیست.</p>';
+        } elseif ($serviceId > 0 && $date !== '') {
+            if ($slots === []) {
+                $slotBlock = '<p class="state-note">برای این روز زمان خالی نمانده است؛ روز دیگری را امتحان کنید.</p>';
+            } else {
+                $times = '';
+                foreach ($slots as $slot) {
+                    $checked = (string)($query['time'] ?? '') === $slot['time'] ? ' checked' : '';
+                    $times .= '<label class="slot"><input type="radio" name="time" value="' . e($slot['time']) . '" required' . $checked . '>'
+                        . '<span>' . e($slot['label']) . '</span></label>';
+                }
+                $slotBlock = '<form class="booking-form" method="post" action="' . e(self::url('booking')) . '">'
+                    . View::csrf()
+                    . '<input type="hidden" name="service_id" value="' . $serviceId . '">'
+                    . '<input type="hidden" name="date" value="' . e($date) . '">'
+                    . $sectionField
+                    . '<fieldset class="slots"><legend>ساعت خالی (' . self::num(count($slots)) . ' زمان)</legend>' . $times . '</fieldset>'
+                    . '<div class="field"><label for="bk-name">نام و نام خانوادگی</label><input id="bk-name" name="name" required minlength="3" autocomplete="name"></div>'
+                    . '<div class="field"><label for="bk-mobile">موبایل</label><input id="bk-mobile" name="mobile" required inputmode="numeric" pattern="09[0-9]{9}" placeholder="09xxxxxxxxx" dir="ltr" autocomplete="tel"></div>'
+                    . '<div class="field"><label for="bk-note">توضیح (اختیاری)</label><textarea id="bk-note" name="note" rows="2" maxlength="300"></textarea></div>'
+                    . '<button class="btn-solid" type="submit">ثبت نوبت</button>'
+                    . '<p class="form-note">نوبت با وضعیت «در انتظار تأیید» ثبت می‌شود و مرکز آن را تأیید می‌کند.</p>'
+                    . '</form>';
+            }
+        }
+
+        $status = '';
+        if (isset($query['ref'])) {
+            $found = Booking::findByRef($section, (string)$query['ref']);
+            $status = $found === null
+                ? '<div class="state-note">نوبتی با این کد پیدا نشد.</div>'
+                : '<div class="booking-done"><h2>وضعیت نوبت</h2><p>' . e($found['service']) . ' — ' . e(Booking::dayLabel((string)$found['appointment_date'])) . ' ساعت ' . self::num(substr((string)$found['start_time'], 0, 5)) . '</p>'
+                  . '<p>وضعیت: ' . e(self::statusLabel((string)$found['status'])) . '</p></div>';
+        }
+
+        $body = '<section class="page-head"><h1>' . e(SiteContent::block('booking.title', 'رزرو نوبت آنلاین')) . '</h1>'
+            . '<p>' . e(SiteContent::block('booking.lead')) . '</p>'
+            . ($section !== null ? '<p class="page-head-note">' . e(Booking::sectionLabel($section)) . '</p>' : '')
+            . '</section>'
+            . $notice . $status . $pickForm . $slotBlock;
+        return self::layout('رزرو نوبت', $body, 'booking', SiteContent::block('booking.lead'));
+    }
+
+    public static function statusLabel(string $status): string {
+        return [
+            'pending' => 'در انتظار تأیید', 'confirmed' => 'تأیید شده', 'arrived' => 'حاضر شده',
+            'in_progress' => 'در حال انجام', 'completed' => 'انجام شده', 'cancelled' => 'لغو شده', 'no_show' => 'عدم مراجعه',
+        ][$status] ?? $status;
     }
 
     /** Shown for an unknown catalog slug, with a way back instead of a dead end. */

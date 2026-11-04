@@ -802,8 +802,21 @@ function customer_profile_extra(int $id): string {
 }
 
 $sectionKey = \App\Support\PublicSite::sectionKeyFor($route);
-if (in_array($route, ['home', 'massage-types', 'massage-type', 'education'], true) || $sectionKey !== null) {
+if (in_array($route, ['home', 'massage-types', 'massage-type', 'education', 'booking'], true) || $sectionKey !== null) {
     if (Auth::user()) redirect('dashboard');
+    if ($route === 'booking') {
+        // A POST carries the centre as a hidden field, so read both bags.
+        $params = array_merge($_GET, $_POST);
+        $requested = isset($params['section']) ? (string)$params['section'] : null;
+        $bookingSection = \App\Services\Booking::section($requested);
+        $needsChoice = Tenant::isMulti() && $bookingSection === null;
+        $result = null;
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$needsChoice) {
+            $result = \App\Services\Booking::create($bookingSection, $_POST);
+        }
+        echo \App\Support\PublicSite::booking($bookingSection, $params, $result, $needsChoice);
+        exit;
+    }
     if ($route === 'home') {
         echo \App\Support\PublicSite::home();
     } elseif ($route === 'massage-type') {
@@ -877,6 +890,61 @@ if ($route === 'customers.credit') {
         }
     }
     redirect('customers.show', ['id' => $id]);
+}
+
+if($route==='online'){
+    // Guest bookings arrive as pending appointments; staff confirm or cancel them.
+    Auth::requireCan('appointments.view');
+    if($_SERVER['REQUEST_METHOD']==='POST'){
+        Auth::requireCan('appointments.manage');
+        $id = (int)($_POST['id'] ?? 0);
+        $action = (string)($_POST['action'] ?? '');
+        $status = ['confirm'=>'confirmed','cancel'=>'cancelled'][$action] ?? null;
+        if($id > 0 && $status !== null){
+            DB::exec("UPDATE appointments SET status=?, updated_at=NOW() WHERE id=? AND source='online' AND deleted_at IS NULL", [$status, $id]);
+            Audit::log('appointment.' . ($action === 'confirm' ? 'confirm' : 'cancel'), 'appointments', $id, ['source'=>'online']);
+            toast($action === 'confirm' ? 'نوبت تأیید شد.' : 'نوبت لغو شد.');
+        }
+        redirect('online');
+    }
+    $pending = DB::select(
+        "SELECT a.id, a.status, a.booking_ref, a.appointment_date, a.start_time, a.end_time, a.notes, a.created_at,
+                c.first_name, c.last_name, c.mobile, s.name service, t.name therapist
+         FROM appointments a
+         JOIN customers c ON c.id = a.customer_id
+         JOIN services s ON s.id = a.service_id
+         JOIN therapists t ON t.id = a.therapist_id
+         WHERE a.source = 'online' AND a.deleted_at IS NULL
+         ORDER BY (a.status = 'pending') DESC, a.appointment_date, a.start_time LIMIT 200"
+    );
+    $rows = '';
+    foreach($pending as $r){
+        $actions = (($r['status'] ?? '') === 'pending')
+            ? '<form method="post" class="d-inline">'.View::csrf().'<input type="hidden" name="id" value="'.(int)$r['id'].'"><button name="action" value="confirm" class="btn btn-sm btn-success">تأیید</button> <button name="action" value="cancel" class="btn btn-sm btn-outline-danger">لغو</button></form>'
+            : '';
+        $rows .= '<tr><td><span dir="ltr">'.e((string)$r['booking_ref']).'</span></td>'
+            . '<td>'.e($r['first_name'].' '.$r['last_name']).'<br><small class="text-muted" dir="ltr">'.e((string)$r['mobile']).'</small></td>'
+            . '<td>'.e(Jalali::toJalali((string)$r['appointment_date'])).'</td>'
+            . '<td><span dir="ltr">'.e(substr((string)$r['start_time'],0,5)).'</span></td>'
+            . '<td>'.e((string)$r['service']).'</td><td>'.e((string)$r['therapist']).'</td>'
+            . '<td>'.status_badge((string)$r['status']).'</td><td>'.$actions.'</td></tr>';
+    }
+    ob_start(); ?>
+    <div class="card p-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div><h3 class="mb-1">نوبت‌های آنلاین</h3><p class="text-muted mb-0">نوبت‌هایی که مهمان از سایت ثبت کرده است. تا تأیید نشوند قطعی نیستند.</p></div>
+        <a class="btn btn-outline-primary" target="_blank" rel="noopener" href="<?=e(\App\Support\Url::plain('booking'))?>">صفحهٔ رزرو در سایت</a>
+      </div>
+      <?php if(!$pending): ?>
+        <p class="empty">هنوز نوبت آنلاینی ثبت نشده است.</p>
+      <?php else: ?>
+      <div class="table-responsive"><table class="table align-middle">
+        <thead><tr><th>کد</th><th>مهمان</th><th>تاریخ</th><th>ساعت</th><th>خدمت</th><th>درمانگر</th><th>وضعیت</th><th>عملیات</th></tr></thead>
+        <tbody><?=$rows?></tbody>
+      </table></div>
+      <?php endif; ?>
+    </div>
+    <?php echo View::render('نوبت‌های آنلاین', ob_get_clean()); exit;
 }
 
 if($route==='dashboard'){ Auth::requireCan('dashboard.view'); $today=date('Y-m-d'); $monthStart=Jalali::startOfMonth($today);
