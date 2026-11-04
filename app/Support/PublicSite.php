@@ -379,7 +379,7 @@ final class PublicSite {
         if ($services === []) {
             $slotBlock = '<p class="state-note">هنوز خدمتی برای رزرو آنلاین ثبت نشده است. لطفاً تلفنی هماهنگ کنید.</p>';
         } elseif ($days === []) {
-            $slotBlock = '<p class="state-note">برنامهٔ کاری ثبت نشده است؛ فعلاً رزرو آنلاین ممکن نیست.</p>';
+            $slotBlock = '<p class="state-note">برنامهٔ کاری مرکز هنوز ثبت نشده است؛ فعلاً رزرو آنلاین ممکن نیست. لطفاً تلفنی هماهنگ کنید.</p>';
         } elseif ($serviceId > 0 && $date !== '') {
             if ($slots === []) {
                 $slotBlock = '<p class="state-note">برای این روز زمان خالی نمانده است؛ روز دیگری را امتحان کنید.</p>';
