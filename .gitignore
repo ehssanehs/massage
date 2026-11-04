@@ -1,6 +1,10 @@
 .env
 public/uploads/*
+!public/uploads/.htaccess
 !public/uploads/.gitkeep
+!public/uploads/site/
+public/uploads/site/*
+!public/uploads/site/.gitkeep
 public/storage/backups/*
 !public/storage/backups/.gitkeep
 *.log

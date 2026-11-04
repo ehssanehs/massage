@@ -13,7 +13,7 @@ return [
  // کاتالوگ عمومی سایت. با مجوز خدمات محافظت می‌شود: هر که خدمات را می‌سازد،
  // همان می‌تواند کاتالوگ را هم ویرایش کند. این جدول در پایگاه‌دادهٔ محتوای
  // سایت است، نه لزوماً در همان پایگاه‌دادهٔ CRUD.
- 'site_types'=>['title'=>'کاتالوگ ماساژها (سایت)','table'=>'massage_types','perm'=>'services','search'=>['title','slug','summary','body'],'columns'=>['sort_order'=>'ترتیب','title'=>'عنوان','slug'=>'نشانی صفحه','duration_minutes'=>'مدت','price_from'=>'قیمت از','status'=>'وضعیت'],'fields'=>[
+ 'site_types'=>['title'=>'کاتالوگ ماساژها (سایت)','table'=>'massage_types','perm'=>'services','image'=>true,'search'=>['title','slug','summary','body'],'columns'=>['sort_order'=>'ترتیب','title'=>'عنوان','slug'=>'نشانی صفحه','duration_minutes'=>'مدت','price_from'=>'قیمت از','status'=>'وضعیت'],'fields'=>[
   'title'=>['عنوان','text','required'],
   'slug'=>['نشانی صفحه (یکتا)','text','required'],
   'summary'=>['خلاصهٔ یک‌خطی','text'],

@@ -633,3 +633,7 @@ p { margin: 0 0 1em; }
 .gift-form { max-width: 640px; }
 .gift-form .slots { gap: 10px; }
 .gift-form .slot span { min-width: 130px; }
+
+/* Uploaded photos are cropped to fill the frame; line-art keeps its ratio. */
+.type-card-art img.is-photo,
+.type-page-art img.is-photo { object-fit: cover; }

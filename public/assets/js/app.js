@@ -326,7 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('select.select-rel').forEach(select => {
         if (select.dataset.searchReady) return;
         const realOptions = [...select.options].filter(o => o.value !== '');
-        if (realOptions.length < 8) return;
+        if (realOptions.length < 6) return;
         select.dataset.searchReady = '1';
 
         const input = document.createElement('input');

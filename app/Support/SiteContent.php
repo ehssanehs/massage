@@ -124,7 +124,7 @@ final class SiteContent {
         if (self::$types !== null) return self::$types;
         try {
             $st = self::pdo()->query(
-                "SELECT id, slug, title, summary, body, illustration, duration_minutes, price_from, sort_order "
+                "SELECT id, slug, title, summary, body, illustration, image, duration_minutes, price_from, sort_order "
                 . "FROM massage_types WHERE status = 'active' AND deleted_at IS NULL ORDER BY sort_order, id"
             );
             self::$types = $st->fetchAll();

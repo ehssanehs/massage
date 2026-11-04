@@ -5,9 +5,9 @@ const path = require('node:path');
 
 const TYPES = [
   {id: 1, slug: 'relax', title: 'ماساژ ریلکسی', summary: 'آرام‌سازی بدن', body: 'متن کامل ریلکسی',
-   illustration: 'relax', duration_minutes: 60, price_from: null, sort_order: 10},
+   illustration: 'relax', image: 'assets/img/massage/photos/relax.jpg', duration_minutes: 60, price_from: null, sort_order: 10},
   {id: 2, slug: 'hot-stone', title: 'ماساژ سنگ داغ', summary: 'گرمای سنگ', body: 'متن کامل سنگ داغ',
-   illustration: 'hot-stone', duration_minutes: 75, price_from: null, sort_order: 20},
+   illustration: 'hot-stone', image: null, duration_minutes: 75, price_from: null, sort_order: 20},
 ];
 
 const BLOCKS = {
@@ -124,4 +124,19 @@ test('the catalog module is guarded by the services permission', () => {
     fixtures: {users: {role_slug: 'staff'}, role_permissions: '["customers.view"]'},
   });
   assert.equal(denied.status, 403);
+});
+
+test('a catalog entry uses its photo, and falls back to the illustration', () => {
+  const {body} = route({r: 'massage-types'}, undefined, withSite);
+  assert.match(body, /img\/massage\/photos\/relax\.jpg(?:\?v=\d+)?/, 'the uploaded/bundled photo is used');
+  assert.match(body, /img\/massage\/hot-stone\.svg/, 'an entry without a photo keeps the line-art image');
+  assert.match(body, /class="is-photo"/, 'photos are marked so they can be cropped');
+});
+
+test('the catalog form uploads an image', () => {
+  const {status, body} = route({r: 'site_types.create'}, undefined, adminSite);
+  assert.equal(status, 200);
+  assert.match(body, /enctype="multipart\/form-data"/, 'the form must accept a file');
+  assert.match(body, /name="image_file"/, 'the file input exists');
+  assert.match(body, /accept="image\/jpeg,image\/png,image\/webp"/, 'only web formats are offered');
 });

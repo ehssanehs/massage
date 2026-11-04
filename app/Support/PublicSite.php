@@ -42,12 +42,26 @@ final class PublicSite {
         return SiteContent::block('site.brand', (string)self::config()['brand']);
     }
 
-    /** Illustration path for a catalog entry; falls back to the generic mark. */
-    private static function art(?string $slug): string {
+    /**
+     * Image for a catalog entry: the photo the owner uploaded (or the bundled
+     * one), falling back to the line-art illustration and finally the generic
+     * mark. Returning a pair keeps the <img> able to pick object-fit.
+     */
+    private static function art(array $type): array {
+        $image = trim((string)($type['image'] ?? ''));
+        if ($image !== '') {
+            // Stored paths are relative to public/: "uploads/site/x.jpg" for an
+            // upload, "assets/img/..." for a bundled photo. asset() adds the
+            // /assets/ prefix itself, so strip a duplicate one.
+            $url = str_starts_with($image, 'uploads/')
+                ? Url::upload($image)
+                : asset(str_starts_with($image, 'assets/') ? substr($image, 7) : $image);
+            return [$url, true];
+        }
         $known = self::config()['illustrations'];
-        $slug = (string)$slug;
-        if ($slug === '' || !in_array($slug, $known, true)) return asset('img/massage/generic.svg');
-        return asset('img/massage/' . $slug . '.svg');
+        $slug = (string)($type['illustration'] ?? '');
+        if ($slug === '' || !in_array($slug, $known, true)) return [asset('img/massage/generic.svg'), false];
+        return [asset('img/massage/' . $slug . '.svg'), false];
     }
 
     private static function navItems(): array {
@@ -178,8 +192,9 @@ final class PublicSite {
         } else {
             $meta[] = 'استعلام قیمت';
         }
+        [$artUrl, $isPhoto] = self::art($type);
         return '<a class="type-card" href="' . e($url) . '">'
-            . '<span class="type-card-art"><img src="' . e(self::art($slug)) . '" alt="" width="240" height="180" loading="lazy"></span>'
+            . '<span class="type-card-art"><img class="' . ($isPhoto ? 'is-photo' : '') . '" src="' . e($artUrl) . '" alt="" width="240" height="180" loading="lazy"></span>'
             . '<span class="type-card-body"><span class="type-card-title">' . e($type['title']) . '</span>'
             . ($withSummary && !empty($type['summary']) ? '<span class="type-card-summary">' . e($type['summary']) . '</span>' : '')
             . '<span class="type-card-meta">' . e(implode(' · ', $meta)) . '</span></span></a>';
@@ -222,7 +237,7 @@ final class PublicSite {
             . '<p class="center-card-note">' . self::centerBookingLink('men') . '</p></article>'
             . '<article class="center-card center-card-women"><h3>' . e(SiteContent::block('centers.women.title', 'مرکز ماساژ بانوان')) . '</h3>'
             . '<p>' . e(SiteContent::block('centers.women.body')) . '</p>'
-            . '<p class="center-card-note">' . self::centerBookingLink('men') . '</p></article>'
+            . '<p class="center-card-note">' . self::centerBookingLink('women') . '</p></article>'
             . '</div></section>'
             . '<section class="types-preview" aria-labelledby="types-title">'
             . self::sectionHead(SiteContent::block('services.title', 'انواع ماساژ'), SiteContent::block('services.lead'))
@@ -278,7 +293,7 @@ final class PublicSite {
         $body = '<article class="type-page">'
             . '<a class="back-link" href="' . e(self::url('massage-types')) . '">بازگشت به فهرست ماساژها</a>'
             . '<div class="type-page-head">'
-            . '<div class="type-page-art"><img src="' . e(self::art((string)$type['illustration'])) . '" alt="" width="360" height="270"></div>'
+            . '<div class="type-page-art"><img class="' . (trim((string)($type['image'] ?? '')) !== '' ? 'is-photo' : '') . '" src="' . e(self::art($type)[0]) . '" alt="" width="360" height="270"></div>'
             . '<div><h1>' . e($type['title']) . '</h1>'
             . (!empty($type['summary']) ? '<p class="type-page-summary">' . e($type['summary']) . '</p>' : '')
             . ($meta !== [] ? '<p class="type-page-meta">' . e(implode(' · ', $meta)) . '</p>' : '')

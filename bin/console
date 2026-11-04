@@ -72,6 +72,28 @@ function seed_site_all(): void {
     seed_site();
 }
 
+/**
+ * Where the public site reads its content from, and whether it is actually there.
+ * Run this first when the site looks empty or out of date after an update.
+ */
+function site_health(): void {
+    echo "Site content database: " . \App\Support\SiteContent::database() . "\n";
+    try {
+        $blocks = (int)\App\Support\SiteContent::pdo()->query('SELECT COUNT(*) FROM site_blocks')->fetchColumn();
+        $types = (int)\App\Support\SiteContent::pdo()->query('SELECT COUNT(*) FROM massage_types WHERE deleted_at IS NULL')->fetchColumn();
+        $withImage = (int)\App\Support\SiteContent::pdo()->query("SELECT COUNT(*) FROM massage_types WHERE image IS NOT NULL AND image <> ''")->fetchColumn();
+        echo "  site_blocks:    $blocks\n";
+        echo "  massage_types:  $types ($withImage with an image)\n";
+        if ($blocks === 0) echo "  ! no copy found: run `php bin/console site:seed`\n";
+    } catch (\Throwable $e) {
+        echo "  ! " . $e->getMessage() . "\n";
+        echo "  run `php bin/console migrate` first.\n";
+    }
+    echo "  photos:         " . count(glob(base_path('public/assets/img/massage/photos/*.jpg')) ?: []) . " bundled\n";
+    $uploads = glob(base_path('public/uploads/site/*')) ?: [];
+    echo "  uploads:        " . count($uploads) . " file(s) in public/uploads/site\n";
+}
+
 function run_migrations(): void {
     $files = glob(base_path('database/migrations/*.sql')) ?: [];
     sort($files);
@@ -111,6 +133,8 @@ try {
     } elseif ($cmd === 'install') {
         each_tenant(function (): void { run_migrations(); seed(); echo "  Installed (no demo data). Default admin: admin@example.com / password\n"; });
         run_site_migrations(); seed_site();
+    } elseif ($cmd === 'site:check') {
+        site_health();
     } elseif ($cmd === 'site:seed') {
         seed_site_all();
         echo "  Site content ensured (copy + massage catalog; existing edits kept).\n";
@@ -146,7 +170,7 @@ try {
     } elseif ($cmd === 'backup:create') {
         each_tenant(function (): void { echo '  ' . BackupService::create() . "\n"; });
     } else {
-        echo "Commands: install, migrate, seed, site:seed, demo:seed, user:password [email] [password], schedule:run, backup:create, backup:check\n";
+        echo "Commands: install, migrate, seed, site:seed, site:check, demo:seed, user:password [email] [password], schedule:run, backup:create, backup:check\n";
         echo "Options:  --tenant=men|women|all (default: every configured section)\n";
     }
 } catch (Throwable $e) { fwrite(STDERR, $e->getMessage() . "\n"); exit(1); }

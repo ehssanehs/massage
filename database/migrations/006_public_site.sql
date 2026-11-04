@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS massage_types (
   summary VARCHAR(400) NULL,
   body TEXT NULL,
   illustration VARCHAR(120) NULL,
+  image VARCHAR(255) NULL,
   duration_minutes INT NULL,
   price_from DECIMAL(15,2) NULL,
   sort_order INT NOT NULL DEFAULT 0,
