@@ -60,6 +60,18 @@ function seed_site(): void {
     $pdo->exec(file_get_contents(base_path('database/seeders/003_site_content.sql')));
 }
 
+/**
+ * Site content only (copy + the massage catalog). Safe to re-run on a live
+ * install: 003 uses INSERT IGNORE, so it never overwrites edits the owner made.
+ * This exists because `seed` also re-applies 001, which resets the admin
+ * password and the settings to their defaults — not something an update wants.
+ */
+function seed_site_all(): void {
+    $file = base_path('database/seeders/003_site_content.sql');
+    each_tenant(function () use ($file): void { DB::pdo()->exec(file_get_contents($file)); });
+    seed_site();
+}
+
 function run_migrations(): void {
     $files = glob(base_path('database/migrations/*.sql')) ?: [];
     sort($files);
@@ -99,6 +111,9 @@ try {
     } elseif ($cmd === 'install') {
         each_tenant(function (): void { run_migrations(); seed(); echo "  Installed (no demo data). Default admin: admin@example.com / password\n"; });
         run_site_migrations(); seed_site();
+    } elseif ($cmd === 'site:seed') {
+        seed_site_all();
+        echo "  Site content ensured (copy + massage catalog; existing edits kept).\n";
     } elseif ($cmd === 'demo:seed') {
         each_tenant(function (): void { seed_demo(); echo "  Sample data loaded (demo services, therapists, customers, ...).\n"; });
     } elseif ($cmd === 'user:password') {
@@ -131,7 +146,7 @@ try {
     } elseif ($cmd === 'backup:create') {
         each_tenant(function (): void { echo '  ' . BackupService::create() . "\n"; });
     } else {
-        echo "Commands: install, migrate, seed, demo:seed, user:password [email] [password], schedule:run, backup:create, backup:check\n";
+        echo "Commands: install, migrate, seed, site:seed, demo:seed, user:password [email] [password], schedule:run, backup:create, backup:check\n";
         echo "Options:  --tenant=men|women|all (default: every configured section)\n";
     }
 } catch (Throwable $e) { fwrite(STDERR, $e->getMessage() . "\n"); exit(1); }

@@ -729,6 +729,84 @@ php bin/console user:password admin@example.com رمز_جدید
 
 ---
 
+## به‌روزرسانی نسخهٔ نصب‌شده
+
+این بخش برای وقتی است که سامانه از قبل نصب شده و می‌خواهید کد جدید را روی همان
+دیتابیس بیاورید. هیچ داده‌ای پاک نمی‌شود.
+
+**۱) قبل از هر چیز پشتیبان بگیرید** (از پنل یا مستقیم):
+
+```bash
+mysqldump -u root -p --default-character-set=utf8mb4 --single-transaction --no-tablespaces massage_men  > backup-men-$(date +%F).sql
+mysqldump -u root -p --default-character-set=utf8mb4 --single-transaction --no-tablespaces massage_women > backup-women-$(date +%F).sql
+cp -a /var/www/massage /var/www/massage-backup-$(date +%F)
+```
+
+**۲) کد را بیاورید:**
+
+```bash
+cd /var/www/massage
+sudo -u www-data git status --short      # باید خالی باشد
+sudo -u www-data git pull origin main
+```
+
+اگر فایل‌هایی را دستی روی سرور تغییر داده‌اید و git اجازهٔ pull نمی‌دهد، تغییرات
+محلی را کنار بگذارید (`git stash`) یا اگر لازم نیستند `git checkout -- .` بزنید؛
+فایل `.env` تحت git نیست و دست نمی‌خورد.
+
+**۳) ساختار دیتابیس را به‌روز کنید** (برای هر دو بخش):
+
+```bash
+sudo -u www-data php bin/console migrate
+```
+
+این کار جدول‌های `site_blocks`، `massage_types` و `gift_cards` را می‌سازد و
+ستون‌های `source`/`booking_ref` را به `appointments` اضافه می‌کند. تکرارش هم
+بی‌خطر است.
+
+**۴) محتوای سایت را اضافه کنید:**
+
+```bash
+sudo -u www-data php bin/console site:seed
+```
+
+این دستور فقط متن‌های سایت و ۱۵ نوع ماساژ را اضافه می‌کند (`INSERT IGNORE`) و
+هیچ‌وقت چیزی را که خودتان تغییر داده‌اید بازنویسی نمی‌کند.
+
+> از `php bin/console seed` برای آپدیت استفاده نکنید: آن دستور تنظیمات و رمز
+> مدیر را به مقدار پیش‌فرض برمی‌گرداند و فقط برای نصب تازه است.
+
+**۵) در `.env` (اختیاری):**
+
+```
+# فقط اگر می‌خواهید محتوای سایت در دیتابیس جدا باشد
+# SITE_DATABASE=massage_site
+
+# فروش کارت هدیه (تا وقتی مرچنت خالی است فرم خرید در سایت نمایش داده نمی‌شود)
+PAYMENT_DRIVER=zarinpal
+ZARINPAL_MERCHANT_ID=
+ZARINPAL_CURRENCY=IRR
+ZARINPAL_SANDBOX=false
+```
+
+اگر `SITE_DATABASE` را تنظیم کردید، آن دیتابیس را بسازید، به کاربر MySQL دسترسی
+بدهید و یک‌بار دیگر `php bin/console migrate` را اجرا کنید.
+
+**۶) دسترسی پوشه‌ها و ری‌استارت:**
+
+```bash
+sudo chown -R www-data:www-data storage public/uploads
+sudo chmod -R 775 storage public/uploads
+sudo systemctl reload php8.2-fpm
+```
+
+**۷) بررسی بعد از آپدیت:**
+
+- صفحهٔ اصلی، «انواع ماساژ»، «رزرو نوبت» و «کارت هدیه» باز شوند.
+- در پنل: «محتوای سایت»، «کاتالوگ ماساژها»، «نوبت‌های آنلاین» و «کارت‌های هدیه».
+- یک بکاپ دستی بگیرید؛ اگر پیام «روش جایگزین PHP» دیدید یعنی `mysqldump` روی
+  این سرور در دسترس نیست ولی فایل سالم ساخته شده است.
+
 ## سایت عمومی و پنل محتوای سایت
 
 صفحهٔ اصلی، فهرست انواع ماساژ، صفحهٔ هر ماساژ و صفحهٔ آموزش با آدرس‌های

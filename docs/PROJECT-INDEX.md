@@ -85,6 +85,10 @@ branches, roles, users, settings, customers, services, therapists, appointments,
 - `?r=lookup&type=customer|therapist|service&q=...` یک JSON کوچک (`id`,`label`) برمی‌گرداند؛ زیر ۲ کاراکتر خالی است، نوع ناشناخته ۴۰۰، و مجوز همان ماژول (`customers.view`/`therapists.view`/`services.view`) لازم است. `%` و `_` در کوئری escape می‌شوند.
 - در `public/assets/js/app.js` هر `select.select-rel` با بیش از ۸ گزینه یک کادر جستجو بالای خود می‌گیرد. فیلتر سمت مرورگر روی همان گزینه‌هاست؛ اگر نتیجه‌ای نبود، از endpoint بالا می‌پرسد و گزینه‌های تازه را به همان `select` اضافه می‌کند. خود `select` سر جایش می‌ماند، پس فرم، `required` و حالت بدون JavaScript دست‌نخورده می‌مانند.
 
+## دستورهای کنسول
+
+`install` (نصب تازه)، `migrate` (ساختار، برای همهٔ بخش‌ها + SITE_DATABASE)، `seed` (نصب تازه: نقش/مدیر/تنظیمات + محتوای سایت)، `site:seed` (فقط محتوای سایت، ایمن برای اجرا روی نصب فعال)، `demo:seed`، `user:password`، `schedule:run`، `backup:create`، `backup:check`.
+
 ## بکاپ
 
 - `BackupService::create()` اول `mysqldump` را با فلگ‌های سازگار با کاربر محدود اجرا می‌کند؛ اگر شکست بخورد یا کلاینت موجود نباشد، با PDO (`SHOW CREATE TABLE` + INSERTهای ۵۰۰تایی) دامپ می‌کند. `BackupService::lastMethod()` می‌گوید کدام روش موفق شد.
