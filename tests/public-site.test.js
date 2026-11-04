@@ -140,3 +140,14 @@ test('the catalog form uploads an image', () => {
   assert.match(body, /name="image_file"/, 'the file input exists');
   assert.match(body, /accept="image\/jpeg,image\/png,image\/webp"/, 'only web formats are offered');
 });
+
+test('a guest can reach a tracking page for their booking code', () => {
+  const page = route({r: 'booking-status'}, undefined, {site: {blocks: {}, types: []}});
+  assert.equal(page.status, 200);
+  assert.match(page.body, /name="ref"/, 'the code input exists');
+  assert.match(page.body, /کد پیگیری/, 'the page explains what to enter');
+  assert.doesNotMatch(page.body, /وضعیت نوبت/, 'no result is claimed before a code is given');
+
+  const booking = route({r: 'booking'}, undefined, {site: {blocks: {}, types: []}});
+  assert.match(booking.body, /r=booking-status/, 'the booking page links to the tracker');
+});

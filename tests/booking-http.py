@@ -178,6 +178,19 @@ def main():
         check(sql(db, "SELECT COUNT(*) FROM customers") == '1', 'the guest became a customer')
         check(sql(db, "SELECT status FROM customers") == 'new', 'the guest customer starts as new')
 
+        # --- the reference can be tracked without knowing the centre --------
+        status, track_form, _ = server.guest('/index.php?r=booking-status')
+        check(status == 200 and 'کد پیگیری نوبت' in track_form, 'the tracking page offers a code input')
+        check('name="ref"' in track_form, 'the tracking form posts a ref field')
+
+        status, tracked, _ = server.guest(f'/index.php?r=booking-status&ref={reference}')
+        check(status == 200 and 'وضعیت نوبت' in tracked, 'a known code shows the booking status')
+        check('در انتظار تأیید' in tracked, 'the pending status is shown')
+        check('ماساژ تست ۶۰' in tracked, 'the booked service is shown')
+
+        status, missing, _ = server.guest('/index.php?r=booking-status&ref=ZZZZZZ')
+        check('پیدا نشد' in missing, 'an unknown code says so instead of failing silently')
+
         # --- capacity is respected across therapists -------------------------
         # A second therapist is still free at 10:00, so the time is offered again.
         status, page, _ = server.get(f'/index.php?r=booking&section=men&service={service_id}&date={tomorrow}')

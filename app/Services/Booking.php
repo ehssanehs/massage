@@ -329,6 +329,26 @@ final class Booking {
         return $row ?: null;
     }
 
+    /**
+     * Look a reference up in every section (the guest only knows the code, not
+     * which centre they booked). Returns the row plus the section it was found in.
+     */
+    public static function findAnywhere(string $ref): ?array {
+        $sections = \App\Support\Tenant::isMulti() ? array_keys(self::SECTIONS) : [null];
+        foreach ($sections as $section) {
+            try {
+                $row = self::findByRef($section, $ref);
+            } catch (\Throwable $e) {
+                continue;
+            }
+            if ($row !== null) {
+                $row['section'] = $section;
+                return $row;
+            }
+        }
+        return null;
+    }
+
     private static function splitName(string $name): array {
         $parts = preg_split('/\s+/', $name, 2) ?: [$name];
         return [$parts[0], $parts[1] ?? ''];
