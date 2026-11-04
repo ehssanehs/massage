@@ -162,7 +162,7 @@ function input_html(string $name, array $f, mixed $value): string {
         if ($current !== '' && !$known) $h .= '<option value="' . e($current) . '" selected>' . e($current) . ' (نا‌شناخته)</option>';
         $h .= '</select>';
     } elseif (in_array($type, ['customer', 'therapist', 'service', 'appointment'], true)) {
-        $h .= '<select id="' . e($id) . '" name="' . e($name) . '" class="form-select select-rel"' . $req . '><option value="">— انتخاب کنید —</option>';
+        $h .= '<select id="' . e($id) . '" name="' . e($name) . '" class="form-select select-rel" data-rel-type="' . e($type) . '"' . $req . '><option value="">— انتخاب کنید —</option>';
         foreach (options($type) as $o) {
             // For service selectors, carry the price of each massage on the option so the
             // front-end can fill/refresh the price/amount fields when a service is chosen.
@@ -926,6 +926,39 @@ if ($route === 'customers.credit') {
         }
     }
     redirect('customers.show', ['id' => $id]);
+}
+
+if($route==='lookup'){
+    // Small JSON endpoint behind the search box on relational selects. The
+    // browser only needs id + label, and only for people allowed to see them.
+    Auth::requireLogin();
+    header('Content-Type: application/json; charset=utf-8');
+    header('X-Content-Type-Options: nosniff');
+    $type = (string)($_GET['type'] ?? '');
+    $q = trim((string)($_GET['q'] ?? ''));
+    if (mb_strlen($q) < 2) { echo '[]'; exit; }
+
+    $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q) . '%';
+    $queries = [
+        'customer' => ['customers.view',
+            "SELECT id, CONCAT(first_name,' ',last_name,' - ',mobile) label FROM customers
+             WHERE deleted_at IS NULL AND (first_name LIKE ? OR last_name LIKE ? OR mobile LIKE ? OR customer_code LIKE ?)
+             ORDER BY id DESC LIMIT 20"],
+        'therapist' => ['therapists.view',
+            "SELECT id, CONCAT(name,' (',code,')') label FROM therapists
+             WHERE deleted_at IS NULL AND (name LIKE ? OR code LIKE ? OR phone LIKE ?)
+             ORDER BY name LIMIT 20"],
+        'service' => ['services.view',
+            "SELECT id, name label FROM services
+             WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name LIMIT 20"],
+    ];
+    if (!isset($queries[$type])) { http_response_code(400); echo '[]'; exit; }
+    [$permission, $sql] = $queries[$type];
+    if (!Auth::can($permission)) { http_response_code(403); echo '[]'; exit; }
+
+    $params = array_fill(0, substr_count($sql, '?'), $like);
+    echo json_encode(DB::select($sql, $params), JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
 if($route==='online'){
@@ -1760,6 +1793,6 @@ if($route==='gifts'){
     <?php echo View::render('کارت‌های هدیه', ob_get_clean()); exit;
 }
 
-if($route==='backup'){ Auth::requireCan('backup.manage'); $error=null; if($_SERVER['REQUEST_METHOD']==='POST'){ try{BackupService::create(); toast('پشتیبان تهیه شد.'); redirect('backup');}catch(Throwable $e){$error=$e->getMessage();}} ob_start(); if($error) echo '<div class="alert alert-danger">'.e($error).'</div>'; ?><div class="card p-4"><form method="post"><?=View::csrf()?><button class="btn btn-primary">ایجاد بکاپ دستی</button></form><h4 class="mt-4">فایل‌های بکاپ</h4><ul><?php foreach(BackupService::list() as $f): ?><li><?=e(BackupService::displayName($f))?></li><?php endforeach;?></ul><p class="text-muted">برای بکاپ زمان‌بندی‌شده از cron طبق مستندات استفاده کنید.</p></div><?php echo View::render('پشتیبان‌گیری', ob_get_clean()); exit; }
+if($route==='backup'){ Auth::requireCan('backup.manage'); $error=null; if($_SERVER['REQUEST_METHOD']==='POST'){ try{ $backupFile = BackupService::create(); toast(BackupService::lastMethod() === 'php' ? 'پشتیبان تهیه شد (روش جایگزین PHP؛ mysqldump در دسترس نبود).' : 'پشتیبان تهیه شد.'); redirect('backup'); }catch(Throwable $e){$error=$e->getMessage();}} ob_start(); if($error) echo '<div class="alert alert-danger">'.e($error).'</div>'; ?><div class="card p-4"><form method="post"><?=View::csrf()?><button class="btn btn-primary">ایجاد بکاپ دستی</button></form><h4 class="mt-4">فایل‌های بکاپ</h4><ul><?php foreach(BackupService::list() as $f): ?><li><?=e(BackupService::displayName($f))?></li><?php endforeach;?></ul><p class="text-muted">برای بکاپ زمان‌بندی‌شده از cron طبق مستندات استفاده کنید.</p></div><?php echo View::render('پشتیبان‌گیری', ob_get_clean()); exit; }
 if($route==='audit'){ Auth::requireCan('audit.view'); $rows=DB::select('SELECT a.*, u.name user FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 200'); ob_start(); ?><div class="card p-3"><table class="table"><tr><th>زمان</th><th>کاربر</th><th>عمل</th><th>رکورد</th><th>IP</th></tr><?php foreach($rows as $r): ?><tr><td><span class="date-time"><?=e(Jalali::dateTime($r['created_at'], true))?></span></td><td><?=e($r['user'])?></td><td><?=e($r['action'])?></td><td><?=e($r['entity'].' #'.$r['entity_id'])?></td><td><?=e($r['ip_address'])?></td></tr><?php endforeach;?></table></div><?php echo View::render('ممیزی', ob_get_clean()); exit; }
 http_response_code(404); echo View::render('یافت نشد','<div class="alert alert-warning">صفحه یافت نشد.</div>');

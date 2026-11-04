@@ -314,4 +314,97 @@ document.addEventListener('DOMContentLoaded', () => {
         select.addEventListener('change', sync);
         sync();
     });
+
+    // ---------------------------------------------------------------
+    // Searchable relational selects (customer / therapist / service).
+    // A long <select> is unusable when the list holds hundreds of names.
+    // We keep the native select (so the form, `required` and no-JS all
+    // still work) and put a filter box above it. When the query matches
+    // nothing locally, we ask the server, so a customer outside the first
+    // page of the list can still be found and added to the select.
+    // ---------------------------------------------------------------
+    document.querySelectorAll('select.select-rel').forEach(select => {
+        if (select.dataset.searchReady) return;
+        const realOptions = [...select.options].filter(o => o.value !== '');
+        if (realOptions.length < 8) return;
+        select.dataset.searchReady = '1';
+
+        const input = document.createElement('input');
+        input.type = 'search';
+        input.className = 'form-control form-control-sm rel-search';
+        input.placeholder = 'جستجو در فهرست… (نام، موبایل یا کد)';
+        input.setAttribute('aria-label', 'جستجو در فهرست انتخاب');
+        input.setAttribute('autocomplete', 'off');
+
+        const status = document.createElement('div');
+        status.className = 'form-text rel-search-status';
+        status.setAttribute('aria-live', 'polite');
+
+        select.parentNode.insertBefore(input, select);
+        select.parentNode.insertBefore(status, select);
+
+        const type = select.dataset.relType || 'customer';
+        const matches = q => [...select.options].filter(o => o.value !== '' &&
+            (q === '' || o.textContent.toLowerCase().includes(q)));
+
+        const filter = () => {
+            const q = input.value.trim().toLowerCase();
+            let shown = 0;
+            [...select.options].forEach(o => {
+                if (o.value === '') { o.hidden = false; return; }
+                const hit = q === '' || o.textContent.toLowerCase().includes(q);
+                o.hidden = !hit;
+                if (hit) shown++;
+            });
+            if (q === '') { status.textContent = ''; return shown; }
+            if (shown > 0) { status.textContent = shown + ' مورد از فهرست'; }
+            else { status.textContent = 'در فهرست پیدا نشد؛ جستجوی سراسری…'; }
+            return shown;
+        };
+
+        let timer = null;
+        let lastQuery = '';
+        const remote = q => {
+            if (q === lastQuery) return;
+            lastQuery = q;
+            const endpoint = 'index.php?r=lookup&type=' + encodeURIComponent(type) +
+                '&q=' + encodeURIComponent(q);
+            fetch(endpoint, { headers: { 'X-Requested-With': 'fetch' }, credentials: 'same-origin' })
+                .then(r => r.ok ? r.json() : [])
+                .then(rows => {
+                    if (!Array.isArray(rows) || rows.length === 0) {
+                        status.textContent = 'موردی پیدا نشد.';
+                        return;
+                    }
+                    let added = 0;
+                    rows.forEach(row => {
+                        const id = String(row.id);
+                        if ([...select.options].some(o => o.value === id)) return;
+                        const option = new Option(row.label, id);
+                        option.dataset.remote = '1';
+                        select.add(option);
+                        added++;
+                    });
+                    const shown = filter();
+                    if (added > 0 && shown === 0) status.textContent = added + ' نتیجه از جستجوی سراسری';
+                })
+                .catch(() => { status.textContent = 'جستجو ممکن نشد.'; });
+        };
+
+        input.addEventListener('input', () => {
+            const q = input.value.trim();
+            const shown = filter();
+            clearTimeout(timer);
+            if (shown === 0 && q.length >= 2) timer = setTimeout(() => remote(q.toLowerCase()), 350);
+        });
+
+        // Escape clears the filter; the select stays usable by keyboard as before.
+        input.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                input.value = '';
+                filter();
+                clearTimeout(timer);
+            }
+        });
+    });
 });
