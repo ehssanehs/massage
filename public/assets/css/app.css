@@ -421,3 +421,9 @@ html[data-bs-theme="dark"] .customer-birth-filter{background:rgba(124,58,237,.06
 .rel-search { margin-bottom: .35rem; }
 .rel-search-status { font-size: .75rem; margin: 0 0 .4rem; min-height: 1rem; color: var(--bs-secondary-color, #6c757d); }
 select.select-rel option[hidden] { display: none; }
+
+/* Weekly working-schedule editor (therapists) */
+.schedule-grid { border: 1px solid var(--bs-border-color, #dee2e6); border-radius: 10px; padding: 10px 12px; }
+.schedule-row { padding: 4px 0; border-bottom: 1px dashed var(--bs-border-color, #dee2e6); }
+.schedule-row:last-child { border-bottom: 0; }
+.schedule-day { font-size: .9rem; }

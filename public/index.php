@@ -42,6 +42,18 @@ function display_value(string $name, array $f, mixed $value): string {
     if ($type === 'select') { $opts = is_array($f[2] ?? null) ? $f[2] : []; $v = (string)$value; return e((string)($opts[$v] ?? t($v, $v))); }
     if ($type === 'payment_method') { $label = PaymentMethods::label((string)$value); return e($label ?? (string)$value); }
     if (in_array($type, ['customer', 'therapist', 'service', 'appointment'], true)) return e(rel_label($type, (int)$value));
+    if ($type === 'schedule') {
+        $days = ['sat' => 'شنبه', 'sun' => 'یکشنبه', 'mon' => 'دوشنبه', 'tue' => 'سه‌شنبه', 'wed' => 'چهارشنبه', 'thu' => 'پنجشنبه', 'fri' => 'جمعه'];
+        $decoded = json_decode((string)$value, true) ?: [];
+        $lines = [];
+        foreach ($days as $k => $label) {
+            if (!isset($decoded[$k])) continue;
+            $parts = preg_split('/\s*-\s*/', (string)$decoded[$k], 2) ?: [];
+            $clock = static fn(string $t): string => str_contains($t, ':') ? $t : str_pad($t, 2, '0', STR_PAD_LEFT) . ':00';
+            $lines[] = $label . ': ' . Jalali::fa($clock($parts[0] ?? '')) . ' تا ' . Jalali::fa($clock($parts[1] ?? ''));
+        }
+        return $lines === [] ? '<span class="text-muted">—</span>' : implode('<br>', array_map('e', $lines));
+    }
     if ($type === 'services_multi') {
         $ids = (array)(json_decode((string)$value, true) ?: []); $names = [];
         foreach ($ids as $sid) { $n = DB::value('SELECT name FROM services WHERE id=?', [(int)$sid]); if ($n) $names[] = (string)$n; }
@@ -86,6 +98,18 @@ function normalize_post(array $fields): array {
         elseif ($type === 'time') $val = is_string($val) ? ClockTime::normalize($val) : null;
         elseif ($type === 'number') $val = Jalali::en((string)$val) === '' ? 0 : Jalali::en((string)$val);
         elseif ($type === 'services_multi') $val = json_encode($val ?: [], JSON_UNESCAPED_UNICODE);
+        elseif ($type === 'schedule') {
+            $out = [];
+            foreach (['sat','sun','mon','tue','wed','thu','fri'] as $day) {
+                $row = is_array($val) ? ($val[$day] ?? []) : [];
+                if (!empty($row['closed'])) continue;
+                $start = ClockTime::normalize((string)($row['start'] ?? ''));
+                $end = ClockTime::normalize((string)($row['end'] ?? ''));
+                if ($start === null || $end === null) continue;
+                $out[$day] = substr($start, 0, 5) . '-' . substr($end, 0, 5);
+            }
+            $val = $out === [] ? null : json_encode($out, JSON_UNESCAPED_UNICODE);
+        }
         elseif (is_string($val)) $val = Security::cleanString(Jalali::en($val));
         $data[$name] = $val;
     }
@@ -102,6 +126,19 @@ function validate_fields(array $fields, array $data): array {
         if ($name === 'deposit_amount') {
             if (\App\Support\AppointmentDeposit::normalize($raw) === null) $errors[] = 'بیعانه باید مبلغ غیرمنفی با حداکثر ۱۳ رقم صحیح و ۲ رقم اعشار باشد.';
             if (!\App\Support\AppointmentDeposit::isAvailable()) $errors[] = \App\Support\AppointmentDeposit::UPGRADE_MESSAGE;
+        }
+        if ($f[1] === 'schedule') {
+            $posted = is_array($raw) ? $raw : [];
+            foreach (['sat','sun','mon','tue','wed','thu','fri'] as $day) {
+                $row = is_array($posted[$day] ?? null) ? $posted[$day] : [];
+                if (!empty($row['closed'])) continue;
+                $start = ClockTime::normalize((string)($row['start'] ?? ''));
+                $end = ClockTime::normalize((string)($row['end'] ?? ''));
+                if ($start !== null && $end !== null && strcmp($end, $start) <= 0) {
+                    $errors[] = $f[0] . ': ساعت پایان باید بعد از ساعت شروع باشد.';
+                    break;
+                }
+            }
         }
         if ($f[1] === 'date' && (!is_string($raw) || trim($raw) !== '') && ($data[$name] ?? null) === null) {
             $errors[] = $f[0] . ' باید یک تاریخ شمسی معتبر به صورت سال/ماه/روز باشد.';
@@ -181,6 +218,35 @@ function input_html(string $name, array $f, mixed $value): string {
         $h .= '<select id="' . e($id) . '" name="' . e($name) . '[]" class="form-select" multiple size="6">';
         foreach (options('service') as $o) $h .= '<option value="' . (int)$o['id'] . '"' . (in_array((int)$o['id'], $selected, true) ? ' selected' : '') . '>' . e((string)$o['label']) . '</option>';
         $h .= '</select><div class="form-text">برای انتخاب چند خدمت، کلید Ctrl را نگه دارید.</div>';
+    } elseif ($type === 'schedule') {
+        // A week grid instead of a JSON textarea: this is what online booking
+        // reads, so it has to be something a receptionist can fill in.
+        $decoded = is_array($value) ? $value : (json_decode((string)$value, true) ?: []);
+        $h .= '<div class="schedule-grid">';
+        foreach (['sat' => 'شنبه', 'sun' => 'یکشنبه', 'mon' => 'دوشنبه', 'tue' => 'سه‌شنبه', 'wed' => 'چهارشنبه', 'thu' => 'پنجشنبه', 'fri' => 'جمعه'] as $day => $label) {
+            $raw = $decoded[$day] ?? '';
+            // After a failed POST the value is the posted array, not the JSON string.
+            if (is_array($raw)) {
+                $raw = !empty($raw['closed']) ? '' : (($raw['start'] ?? '') . '-' . ($raw['end'] ?? ''));
+            }
+            $range = (string)$raw;
+            $start = '09:00';
+            $end = '17:00';
+            if (preg_match('/^(\d{1,2})(?::(\d{2}))?\s*-\s*(\d{1,2})(?::(\d{2}))?$/', $range, $m)) {
+                $start = str_pad($m[1], 2, '0', STR_PAD_LEFT) . ':' . ($m[2] ?? '00');
+                $end = str_pad($m[3], 2, '0', STR_PAD_LEFT) . ':' . ($m[4] ?? '00');
+            }
+            $closed = $range === '';
+            $h .= '<div class="row g-2 align-items-center schedule-row">'
+                . '<div class="col-3 col-md-2 schedule-day">' . e($label) . '</div>'
+                . '<div class="col-4 col-md-3"><label class="visually-hidden" for="' . e($id) . '-' . $day . '-start">شروع</label>'
+                . '<input type="time" class="form-control form-control-sm" id="' . e($id) . '-' . $day . '-start" name="' . e($name) . '[' . $day . '][start]" value="' . e($start) . '"></div>'
+                . '<div class="col-4 col-md-3"><label class="visually-hidden" for="' . e($id) . '-' . $day . '-end">پایان</label>'
+                . '<input type="time" class="form-control form-control-sm" id="' . e($id) . '-' . $day . '-end" name="' . e($name) . '[' . $day . '][end]" value="' . e($end) . '"></div>'
+                . '<div class="col-12 col-md-3"><label class="form-check mb-0"><input type="checkbox" class="form-check-input" name="' . e($name) . '[' . $day . '][closed]" value="1"' . ($closed ? ' checked' : '') . '> <span class="form-check-label">تعطیل</span></label></div>'
+                . '</div>';
+        }
+        $h .= '</div><div class="form-text">این ساعت‌ها مبنای نمایش نوبت‌های خالی در سایت است. برای روزی که درمانگر نیست، «تعطیل» را بزنید.</div>';
     } elseif ($type === 'date') {
         $v = is_string($value) ? $value : '';
         // Only storage values are Gregorian. A submitted 1405-01-01 is Jalali.
@@ -987,6 +1053,11 @@ if($route==='online'){
         }
         redirect('online');
     }
+    // Without a weekly schedule online booking has no free times to offer, and
+    // that is invisible from this screen unless we say so.
+    $scheduled = (int)DB::value("SELECT COUNT(*) FROM therapists WHERE status='active' AND deleted_at IS NULL AND working_schedule IS NOT NULL AND working_schedule <> ''");
+    $setupHint = $scheduled > 0 ? '' : '<div class="alert alert-warning d-flex justify-content-between align-items-center gap-2"><span>هیچ درمانگر فعالی «برنامه کاری هفتگی» ندارد، بنابراین صفحهٔ رزرو آنلاین زمان خالی نشان نمی‌دهد.</span><a class="btn btn-sm btn-outline-dark" href="' . e(url('therapists')) . '">ثبت برنامه کاری</a></div>';
+
     $pending = DB::select(
         "SELECT a.id, a.status, a.booking_ref, a.appointment_date, a.start_time, a.end_time, a.notes, a.created_at,
                 c.first_name, c.last_name, c.mobile, s.name service, t.name therapist
@@ -1015,6 +1086,7 @@ if($route==='online'){
         <div><h3 class="mb-1">نوبت‌های آنلاین</h3><p class="text-muted mb-0">نوبت‌هایی که مهمان از سایت ثبت کرده است. تا تأیید نشوند قطعی نیستند.</p></div>
         <a class="btn btn-outline-primary" target="_blank" rel="noopener" href="<?=e(\App\Support\Url::plain('booking'))?>">صفحهٔ رزرو در سایت</a>
       </div>
+      <?=$setupHint?>
       <?php if(!$pending): ?>
         <p class="empty">هنوز نوبت آنلاینی ثبت نشده است.</p>
       <?php else: ?>
